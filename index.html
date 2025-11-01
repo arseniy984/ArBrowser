@@ -3,247 +3,326 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Мой сайт на GitHub</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Arial', sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        
-        header {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            padding: 1rem 0;
-            position: fixed;
-            width: 100%;
-            top: 0;
-            z-index: 1000;
-        }
-        
-        nav {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .logo {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: white;
-        }
-        
-        .nav-links {
-            display: flex;
-            list-style: none;
-            gap: 2rem;
-        }
-        
-        .nav-links a {
-            color: white;
-            text-decoration: none;
-            transition: color 0.3s;
-        }
-        
-        .nav-links a:hover {
-            color: #ffd700;
-        }
-        
-        .hero {
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            color: white;
-        }
-        
-        .hero-content h1 {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-            animation: fadeInUp 1s ease;
-        }
-        
-        .hero-content p {
-            font-size: 1.2rem;
-            margin-bottom: 2rem;
-            animation: fadeInUp 1s ease 0.2s both;
-        }
-        
-        .btn {
-            display: inline-block;
-            padding: 12px 30px;
-            background: #ffd700;
-            color: #333;
-            text-decoration: none;
-            border-radius: 5px;
-            font-weight: bold;
-            transition: transform 0.3s;
-            animation: fadeInUp 1s ease 0.4s both;
-        }
-        
-        .btn:hover {
-            transform: translateY(-3px);
-        }
-        
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-        
-        section {
-            padding: 100px 0;
-            background: white;
-        }
-        
-        .section-title {
-            text-align: center;
-            font-size: 2.5rem;
-            margin-bottom: 3rem;
-            color: #333;
-        }
-        
-        .features {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-            margin-top: 3rem;
-        }
-        
-        .feature-card {
-            background: #f8f9fa;
-            padding: 2rem;
-            border-radius: 10px;
-            text-align: center;
-            transition: transform 0.3s;
-        }
-        
-        .feature-card:hover {
-            transform: translateY(-10px);
-        }
-        
-        footer {
-            background: #333;
-            color: white;
-            text-align: center;
-            padding: 2rem 0;
-        }
-    </style>
+    <title>ArBrowser - Браузер нового поколения</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header>
-        <div class="container">
-            <nav>
-                <div class="logo">МойСайт</div>
-                <ul class="nav-links">
-                    <li><a href="#home">Главная</a></li>
-                    <li><a href="#about">О нас</a></li>
-                    <li><a href="#services">Услуги</a></li>
-                    <li><a href="#contact">Контакты</a></li>
+    <!-- Preloader -->
+    <div class="preloader">
+        <div class="windows-loader">
+            <div class="loader-circle"></div>
+            <div class="loader-percentage">0%</div>
+        </div>
+    </div>
+
+    <!-- Auth Modals -->
+    <div id="authModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div class="auth-tabs">
+                <button class="auth-tab active" data-tab="login">Вход</button>
+                <button class="auth-tab" data-tab="register">Регистрация</button>
+            </div>
+            
+            <div class="auth-content">
+                <form id="loginForm" class="auth-form active">
+                    <h2>Вход в аккаунт</h2>
+                    <div class="form-group">
+                        <label for="loginEmail">Email</label>
+                        <input type="email" id="loginEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Пароль</label>
+                        <input type="password" id="loginPassword" required>
+                    </div>
+                    <button type="submit" class="submit-btn">Войти</button>
+                </form>
+                
+                <form id="registerForm" class="auth-form">
+                    <h2>Регистрация</h2>
+                    <div class="form-group">
+                        <label for="regEmail">Email</label>
+                        <input type="email" id="regEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regFirstName">Имя</label>
+                        <input type="text" id="regFirstName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regLastName">Фамилия</label>
+                        <input type="text" id="regLastName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regPassword">Пароль</label>
+                        <input type="password" id="regPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="regConfirmPassword">Подтвердите пароль</label>
+                        <input type="password" id="regConfirmPassword" required>
+                    </div>
+                    <button type="submit" class="submit-btn">Зарегистрироваться</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Request Modal -->
+    <div id="notificationModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Уведомления ArBrowser</h2>
+            <div class="notification-content">
+                <div class="notification-icon">🔔</div>
+                <p>Разрешите отправлять вам уведомления, чтобы быть в курсе статуса ваших заявок и получать важные обновления</p>
+                <button id="enableNotifications" class="submit-btn">Разрешить уведомления</button>
+                <button id="skipNotifications" class="secondary-btn">Пропустить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Notifications Panel -->
+    <div id="userNotifications" class="user-notifications hidden">
+        <div class="notifications-header">
+            <h3>Уведомления</h3>
+            <button class="close-notifications">&times;</button>
+        </div>
+        <div class="notifications-list" id="notificationsList"></div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="content hidden">
+        <!-- Navigation -->
+        <nav class="navbar">
+            <div class="nav-container">
+                <div class="nav-logo">
+                    <h2>ArBrowser</h2>
+                </div>
+                <ul class="nav-menu">
+                    <li><a href="#home" class="nav-link">Главная</a></li>
+                    <li><a href="#features" class="nav-link">Возможности</a></li>
+                    <li><a href="#about" class="nav-link">О проекте</a></li>
+                    <li class="nav-auth">
+                        <button class="nav-btn auth-btn" id="navAuthBtn">Войти</button>
+                        <div class="user-menu hidden" id="userMenu">
+                            <span class="user-name" id="userName"></span>
+                            <button class="nav-btn notifications-btn" id="notificationsBtn">🔔</button>
+                            <button class="nav-btn logout-btn" id="userLogout">Выйти</button>
+                        </div>
+                    </li>
                 </ul>
-            </nav>
-        </div>
-    </header>
+            </div>
+        </nav>
 
-    <section id="home" class="hero">
-        <div class="hero-content">
-            <h1>Добро пожаловать на мой сайт</h1>
-            <p>Создано с помощью GitHub Pages</p>
-            <a href="#about" class="btn">Узнать больше</a>
-        </div>
-    </section>
+        <!-- Hero Section -->
+        <section id="home" class="hero">
+            <div class="hero-background">
+                <div class="floating-elements">
+                    <div class="float-element el1"></div>
+                    <div class="float-element el2"></div>
+                    <div class="float-element el3"></div>
+                    <div class="float-element el4"></div>
+                </div>
+            </div>
+            <div class="hero-content">
+                <h1 class="hero-title">ArBrowser</h1>
+                <p class="hero-subtitle">Браузер нового поколения от Ткаченко Арсения</p>
+                <p class="development-notice">🚧 Сайт находится в разработке 🚧</p>
+                <div class="hero-buttons">
+                    <button class="cta-button beta-btn">Стать бета-тестером</button>
+                    <button class="cta-button secondary-btn dev-btn">Помочь в разработке</button>
+                </div>
+            </div>
+            <div class="scroll-indicator">
+                <div class="scroll-arrow"></div>
+            </div>
+        </section>
 
-    <section id="about">
-        <div class="container">
-            <h2 class="section-title">О нас</h2>
-            <div class="features">
-                <div class="feature-card">
-                    <h3>🚀 Современные технологии</h3>
-                    <p>Используем передовые подходы в веб-разработке</p>
+        <!-- Features Section -->
+        <section id="features" class="features">
+            <div class="container">
+                <h2 class="section-title">Уникальные возможности</h2>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">⚡</div>
+                        <h3>Молниеносная скорость</h3>
+                        <p>Оптимизированный движок обеспечивает невероятную скорость загрузки страниц</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🔒</div>
+                        <h3>Максимальная безопасность</h3>
+                        <p>Встроенная защита от трекеров и вредоносных сайтов</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🎨</div>
+                        <h3>Интуитивный дизайн</h3>
+                        <p>Плавные анимации и современный пользовательский интерфейс</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🛠️</div>
+                        <h3>Гибкая настройка</h3>
+                        <p>Широкие возможности кастомизации под ваши потребности</p>
+                    </div>
                 </div>
-                <div class="feature-card">
-                    <h3>💡 Креативные решения</h3>
-                    <p>Создаем уникальные и функциональные сайты</p>
+            </div>
+        </section>
+
+        <!-- About Section -->
+        <section id="about" class="about">
+            <div class="container">
+                <h2 class="section-title">О проекте</h2>
+                <div class="about-content">
+                    <div class="about-text">
+                        <h3>Разработано Ткаченко Арсением</h3>
+                        <p>ArBrowser - это инновационный веб-браузер, созданный с нуля с использованием современных технологий. Проект сочетает в себе высокую производительность, безопасность и элегантный дизайн.</p>
+                        <div class="release-info">
+                            <h4>📅 Примерный релиз: Декабрь 2025</h4>
+                            <p>Присоединяйтесь к бета-тестированию и станьте частью нашего сообщества!</p>
+                        </div>
+                        <div class="team-join">
+                            <h4>💼 Хотите присоединиться к команде?</h4>
+                            <p>Мы ищем талантливых разработчиков, дизайнеров и тестировщиков!</p>
+                            <button class="cta-button dev-btn">Присоединиться к разработке</button>
+                        </div>
+                    </div>
                 </div>
-                <div class="feature-card">
-                    <h3>⚡ Быстрая работа</h3>
-                    <p>Оптимизированные и быстрые веб-страницы</p>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="container">
+                <p>&copy; 2025 ArBrowser. Разработано Ткаченко Арсением. Все права защищены.</p>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Beta Testing Modal -->
+    <div id="betaModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Заявка на бета-тестирование</h2>
+            <form id="betaForm">
+                <div class="form-group">
+                    <label for="email">Email *</label>
+                    <input type="email" id="email" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="firstName">Имя *</label>
+                    <input type="text" id="firstName" name="firstName" required>
+                </div>
+                <div class="form-group">
+                    <label for="lastName">Фамилия *</label>
+                    <input type="text" id="lastName" name="lastName" required>
+                </div>
+                <div class="form-group">
+                    <label for="reason">Почему вы хотите протестировать ArBrowser? *</label>
+                    <textarea id="reason" name="reason" rows="4" required></textarea>
+                </div>
+                <button type="submit" class="submit-btn">Отправить заявку</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Development Team Modal -->
+    <div id="devModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Присоединиться к команде разработки</h2>
+            <form id="devForm">
+                <div class="form-group">
+                    <label for="devEmail">Email *</label>
+                    <input type="email" id="devEmail" name="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="devFirstName">Имя *</label>
+                    <input type="text" id="devFirstName" name="firstName" required>
+                </div>
+                <div class="form-group">
+                    <label for="devLastName">Фамилия *</label>
+                    <input type="text" id="devLastName" name="lastName" required>
+                </div>
+                <div class="form-group">
+                    <label for="devRole">Кем вы хотите быть в команде? *</label>
+                    <select id="devRole" name="role" required>
+                        <option value="">Выберите роль</option>
+                        <option value="frontend">Frontend разработчик</option>
+                        <option value="backend">Backend разработчик</option>
+                        <option value="fullstack">Fullstack разработчик</option>
+                        <option value="designer">UI/UX дизайнер</option>
+                        <option value="qa">QA инженер / Тестировщик</option>
+                        <option value="devops">DevOps инженер</option>
+                        <option value="marketing">Маркетолог</option>
+                        <option value="other">Другое</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="devExperience">Опыт работы (лет) *</label>
+                    <input type="number" id="devExperience" name="experience" min="0" max="50" required>
+                </div>
+                <div class="form-group">
+                    <label for="devSkills">Ваши навыки и технологии *</label>
+                    <textarea id="devSkills" name="skills" rows="3" placeholder="JavaScript, React, Node.js, Figma..." required></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="devMotivation">Почему вы хотите присоединиться к проекту? *</label>
+                    <textarea id="devMotivation" name="motivation" rows="4" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="devPortfolio">Ссылка на портфолио / GitHub (если есть)</label>
+                    <input type="url" id="devPortfolio" name="portfolio">
+                </div>
+                <button type="submit" class="submit-btn">Отправить заявку</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Admin Panel -->
+    <div id="adminPanel" class="admin-panel hidden">
+        <div class="admin-header">
+            <h2>Админ панель ArBrowser</h2>
+            <button id="logoutBtn" class="logout-btn">Выйти</button>
+        </div>
+        <div class="admin-content">
+            <div class="applications-tabs">
+                <button class="tab-btn active" data-tab="beta">Бета-заявки</button>
+                <button class="tab-btn" data-tab="dev">Заявки в команду</button>
+                <button class="tab-btn" data-tab="users">Пользователи</button>
+            </div>
+            
+            <div class="tab-content active" id="betaTab">
+                <div id="betaApplications" class="applications-list"></div>
+            </div>
+            
+            <div class="tab-content" id="devTab">
+                <div id="devApplications" class="applications-list"></div>
+            </div>
+            
+            <div class="tab-content" id="usersTab">
+                <div id="usersList" class="applications-list"></div>
+            </div>
+            
+            <div class="admin-section">
+                <h3>Редактирование контента</h3>
+                <div class="content-editor">
+                    <div class="editor-group">
+                        <label>Заголовок героя:</label>
+                        <input type="text" id="heroTitle" value="ArBrowser">
+                    </div>
+                    <div class="editor-group">
+                        <label>Подзаголовок героя:</label>
+                        <textarea id="heroSubtitle">Браузер нового поколения от Ткаченко Арсения</textarea>
+                    </div>
+                    <div class="editor-group">
+                        <label>Дата релиза:</label>
+                        <input type="text" id="releaseDate" value="Декабрь 2025">
+                    </div>
+                    <button id="saveContent" class="save-btn">Сохранить изменения</button>
                 </div>
             </div>
         </div>
-    </section>
+    </div>
 
-    <section id="services" style="background: #f8f9fa;">
-        <div class="container">
-            <h2 class="section-title">Наши услуги</h2>
-            <div class="features">
-                <div class="feature-card">
-                    <h3>🌐 Веб-разработка</h3>
-                    <p>Создание современных веб-сайтов и приложений</p>
-                </div>
-                <div class="feature-card">
-                    <h3>📱 Адаптивный дизайн</h3>
-                    <p>Сайты которые отлично работают на всех устройствах</p>
-                </div>
-                <div class="feature-card">
-                    <h3>🔧 Техническая поддержка</h3>
-                    <p>Постоянное обслуживание и обновление сайтов</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <footer id="contact">
-        <div class="container">
-            <h2>Свяжитесь с нами</h2>
-            <p>Email: contact@example.com</p>
-            <p>Телефон: +7 (999) 999-99-99</p>
-            <p>&copy; 2024 МойСайт. Все права защищены.</p>
-        </div>
-    </footer>
-
-    <script>
-        // Плавная прокрутка
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-            anchor.addEventListener('click', function (e) {
-                e.preventDefault();
-                document.querySelector(this.getAttribute('href')).scrollIntoView({
-                    behavior: 'smooth'
-                });
-            });
-        });
-
-        // Фиксированный хедер
-        window.addEventListener('scroll', function() {
-            const header = document.querySelector('header');
-            if (window.scrollY > 100) {
-                header.style.background = 'rgba(255, 255, 255, 0.95)';
-                header.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
-            } else {
-                header.style.background = 'rgba(255, 255, 255, 0.1)';
-                header.style.boxShadow = 'none';
-            }
-        });
-    </script>
+    <script src="script.js"></script>
 </body>
 </html>
