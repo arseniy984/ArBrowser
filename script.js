@@ -2,7 +2,7 @@
 class DatabaseManager {
     constructor() {
         this.dbName = 'ArBrowserDB';
-        this.version = 2; // Увеличиваем версию для новых индексов
+        this.version = 2;
         this.db = null;
         this.init();
     }
@@ -10,82 +10,41 @@ class DatabaseManager {
     async init() {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(this.dbName, this.version);
-
-            request.onerror = () => {
-                console.error('Ошибка открытия базы данных');
-                reject(request.error);
-            };
-
+            request.onerror = () => reject(request.error);
             request.onsuccess = () => {
                 this.db = request.result;
-                console.log('База данных успешно открыта');
                 resolve(this.db);
             };
-
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-                
-                // Создаем хранилище для пользователей
                 if (!db.objectStoreNames.contains('users')) {
                     const userStore = db.createObjectStore('users', { keyPath: 'id', autoIncrement: true });
                     userStore.createIndex('email', 'email', { unique: true });
-                    userStore.createIndex('createdAt', 'createdAt');
                 }
-
-                // Создаем хранилище для бета-заявок
                 if (!db.objectStoreNames.contains('betaApplications')) {
                     const betaStore = db.createObjectStore('betaApplications', { keyPath: 'id', autoIncrement: true });
                     betaStore.createIndex('userId', 'userId');
-                    betaStore.createIndex('email', 'email');
-                    betaStore.createIndex('status', 'status');
-                    betaStore.createIndex('createdAt', 'createdAt');
-                } else {
-                    // Обновляем существующее хранилище
-                    const betaStore = request.transaction.objectStore('betaApplications');
-                    if (!betaStore.indexNames.contains('userId')) {
-                        betaStore.createIndex('userId', 'userId');
-                    }
                 }
-
-                // Создаем хранилище для заявок в команду
                 if (!db.objectStoreNames.contains('devApplications')) {
                     const devStore = db.createObjectStore('devApplications', { keyPath: 'id', autoIncrement: true });
                     devStore.createIndex('userId', 'userId');
-                    devStore.createIndex('email', 'email');
-                    devStore.createIndex('status', 'status');
-                    devStore.createIndex('createdAt', 'createdAt');
-                } else {
-                    const devStore = request.transaction.objectStore('devApplications');
-                    if (!devStore.indexNames.contains('userId')) {
-                        devStore.createIndex('userId', 'userId');
-                    }
                 }
-
-                // Создаем хранилище для уведомлений
                 if (!db.objectStoreNames.contains('notifications')) {
                     const notifStore = db.createObjectStore('notifications', { keyPath: 'id', autoIncrement: true });
                     notifStore.createIndex('userId', 'userId');
-                    notifStore.createIndex('read', 'read');
-                    notifStore.createIndex('createdAt', 'createdAt');
                 }
-
-                // Создаем хранилище для контента сайта
                 if (!db.objectStoreNames.contains('siteContent')) {
-                    const contentStore = db.createObjectStore('siteContent', { keyPath: 'id' });
+                    db.createObjectStore('siteContent', { keyPath: 'id' });
                 }
-
-                console.log('Структура базы данных создана/обновлена');
             };
         });
     }
 
-    // Общие методы для работы с хранилищами
     async add(storeName, data) {
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
             const request = store.add(data);
-
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
@@ -96,7 +55,6 @@ class DatabaseManager {
             const transaction = this.db.transaction([storeName], 'readonly');
             const store = transaction.objectStore(storeName);
             const request = store.get(key);
-
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
@@ -108,7 +66,6 @@ class DatabaseManager {
             const store = transaction.objectStore(storeName);
             const target = indexName ? store.index(indexName) : store;
             const request = query ? target.getAll(query) : target.getAll();
-
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
@@ -119,7 +76,6 @@ class DatabaseManager {
             const transaction = this.db.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
             const request = store.put(data);
-
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
@@ -130,19 +86,6 @@ class DatabaseManager {
             const transaction = this.db.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
             const request = store.delete(key);
-
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    async count(storeName, indexName = null, query = null) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readonly');
-            const store = transaction.objectStore(storeName);
-            const target = indexName ? store.index(indexName) : store;
-            const request = query ? target.count(query) : target.count();
-
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
@@ -150,6 +93,90 @@ class DatabaseManager {
 }
 
 const dbManager = new DatabaseManager();
+
+// Telegram Bot Manager
+class TelegramBotManager {
+    constructor() {
+        // ЗАМЕНИТЕ НА ВАШИ ДАННЫЕ!
+        this.botToken = '7546982692:AAH8qW1k9P8Wm8bB3W7p3p3p3p3p3p3p3p3p'; // Ваш токен бота
+        this.chatId = '7045075942'; // Ваш chat_id
+    }
+
+    async sendMessage(message) {
+        try {
+            // Для обхода CORS используем proxy или напрямую если сервер позволяет
+            const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    chat_id: this.chatId,
+                    text: message,
+                    parse_mode: 'HTML'
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log('✅ Telegram message sent:', result);
+            return result.ok;
+        } catch (error) {
+            console.error('❌ Error sending Telegram message:', error);
+            // Не прерываем выполнение при ошибке Telegram
+            return false;
+        }
+    }
+
+    async sendNewApplicationNotification(application, type) {
+        const appType = type === 'beta' ? 'бета-тестирование' : 'команду разработки';
+        const message = `
+🆕 <b>НОВАЯ ЗАЯВКА НА ${appType.toUpperCase()}</b>
+
+👤 <b>Имя:</b> ${application.firstName} ${application.lastName}
+📧 <b>Email:</b> ${application.email}
+🆔 <b>ID заявки:</b> ${application.id}
+⏰ <b>Время:</b> ${new Date(application.createdAt).toLocaleString('ru-RU')}
+
+${type === 'dev' ? 
+`💼 <b>Роль:</b> ${application.role}
+📊 <b>Опыт:</b> ${application.experience} лет
+🛠️ <b>Навыки:</b> ${application.skills.substring(0, 50)}...` : 
+`📝 <b>Причина:</b> ${application.reason.substring(0, 100)}...`}
+
+<b>Статус:</b> ⏳ Ожидает рассмотрения
+        `.trim();
+
+        return await this.sendMessage(message);
+    }
+
+    async sendApplicationStatusUpdate(application, type, status, adminComment = '') {
+        const appType = type === 'beta' ? 'бета-тестирование' : 'команду разработки';
+        const statusText = status === 'approved' ? '✅ ОДОБРЕНА' : '❌ ОТКЛОНЕНА';
+        const statusEmoji = status === 'approved' ? '✅' : '❌';
+        
+        const message = `
+🔄 <b>СТАТУС ЗАЯВКИ ИЗМЕНЕН</b>
+
+${statusEmoji} <b>Статус:</b> ${statusText}
+👤 <b>Имя:</b> ${application.firstName} ${application.lastName}
+📧 <b>Email:</b> ${application.email}
+🆔 <b>ID заявки:</b> ${application.id}
+📝 <b>Тип:</b> ${appType}
+${adminComment ? `💬 <b>Комментарий:</b> ${adminComment}` : ''}
+⏰ <b>Время обработки:</b> ${new Date().toLocaleString('ru-RU')}
+        `.trim();
+
+        return await this.sendMessage(message);
+    }
+}
+
+const telegramBot = new TelegramBotManager();
 
 // Password Manager
 class PasswordManager {
@@ -186,7 +213,6 @@ class UserManager {
     }
 
     async register(email, firstName, lastName, password) {
-        // Проверяем, существует ли пользователь с таким email
         const existingUsers = await dbManager.getAll('users', 'email', email.toLowerCase().trim());
         if (existingUsers.length > 0) {
             throw new Error('Пользователь с таким email уже существует');
@@ -204,7 +230,6 @@ class UserManager {
 
         const userId = await dbManager.add('users', user);
         user.id = userId;
-        
         return user;
     }
 
@@ -221,7 +246,6 @@ class UserManager {
             throw new Error('Неверный пароль');
         }
 
-        // Обновляем время последнего входа
         user.lastLogin = new Date().toISOString();
         await dbManager.update('users', user);
 
@@ -233,7 +257,6 @@ class UserManager {
     logout() {
         this.currentUser = null;
         localStorage.removeItem('currentUser');
-        // Закрываем все модальные окна при выходе
         document.querySelectorAll('.modal').forEach(modal => {
             modal.style.display = 'none';
         });
@@ -306,61 +329,17 @@ class UserManager {
 
 const userManager = new UserManager();
 
-// Notification Manager
-class NotificationManager {
-    constructor() {
-        this.notificationSupport = 'Notification' in window;
-    }
-
-    async requestPermission() {
-        if (!this.notificationSupport) {
-            console.log('Браузер не поддерживает уведомления');
-            return false;
-        }
-
-        try {
-            const permission = await Notification.requestPermission();
-            return permission === 'granted';
-        } catch (error) {
-            console.error('Ошибка запроса разрешения:', error);
-            return false;
-        }
-    }
-
-    showBrowserNotification(title, message) {
-        if (!this.notificationSupport || Notification.permission !== 'granted') {
-            return;
-        }
-
-        new Notification(title, {
-            body: message,
-            icon: '/favicon.ico',
-            tag: 'arbrowser-notification'
-        });
-    }
-
-    sendEmailNotification(email, subject, message) {
-        console.log('Отправка email:', { email, subject, message });
-        // В реальном приложении здесь был бы запрос к серверу
-    }
-}
-
-const notificationManager = new NotificationManager();
-
-// Application Manager
+// Application Manager с Telegram уведомлениями
 class ApplicationManager {
     async submitBetaApplication(data, userId) {
-        // Проверяем последнюю заявку пользователя
         const userApplications = await dbManager.getAll('betaApplications', 'userId', userId);
         
         if (userApplications.length > 0) {
-            // Сортируем по дате (последняя первая)
             userApplications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
             const lastApplication = userApplications[0];
             const lastApplicationDate = new Date(lastApplication.createdAt);
             const currentDate = new Date();
             
-            // Проверяем, прошло ли 30 дней с последней заявки
             const daysSinceLastApplication = Math.floor((currentDate - lastApplicationDate) / (1000 * 60 * 60 * 24));
             
             if (daysSinceLastApplication < 30) {
@@ -380,22 +359,25 @@ class ApplicationManager {
             adminComment: null
         };
 
-        await dbManager.add('betaApplications', application);
+        const applicationId = await dbManager.add('betaApplications', application);
+        application.id = applicationId;
+
+        // Отправляем уведомление в Telegram
+        console.log('📨 Отправка уведомления в Telegram...');
+        await telegramBot.sendNewApplicationNotification(application, 'beta');
+
         return application;
     }
 
     async submitDevApplication(data, userId) {
-        // Проверяем последнюю заявку пользователя
         const userApplications = await dbManager.getAll('devApplications', 'userId', userId);
         
         if (userApplications.length > 0) {
-            // Сортируем по дате (последняя первая)
             userApplications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
             const lastApplication = userApplications[0];
             const lastApplicationDate = new Date(lastApplication.createdAt);
             const currentDate = new Date();
             
-            // Проверяем, прошло ли 30 дней с последней заявки
             const daysSinceLastApplication = Math.floor((currentDate - lastApplicationDate) / (1000 * 60 * 60 * 24));
             
             if (daysSinceLastApplication < 30) {
@@ -419,7 +401,13 @@ class ApplicationManager {
             adminComment: null
         };
 
-        await dbManager.add('devApplications', application);
+        const applicationId = await dbManager.add('devApplications', application);
+        application.id = applicationId;
+
+        // Отправляем уведомление в Telegram
+        console.log('📨 Отправка уведомления в Telegram...');
+        await telegramBot.sendNewApplicationNotification(application, 'dev');
+
         return application;
     }
 
@@ -438,6 +426,11 @@ class ApplicationManager {
             application.adminComment = adminComment;
             application.processedAt = new Date().toISOString();
             await dbManager.update(storeName, application);
+
+            // Отправляем уведомление в Telegram об изменении статуса
+            console.log('📨 Отправка уведомления о смене статуса в Telegram...');
+            await telegramBot.sendApplicationStatusUpdate(application, type, status, adminComment);
+
             return application;
         }
     }
@@ -455,16 +448,6 @@ class ApplicationManager {
         await dbManager.delete(storeName, applicationId);
     }
 
-    async getApplicationsByUserId(userId) {
-        const betaApps = await dbManager.getAll('betaApplications', 'userId', userId);
-        const devApps = await dbManager.getAll('devApplications', 'userId', userId);
-        
-        return {
-            beta: betaApps,
-            dev: devApps
-        };
-    }
-
     async canSubmitApplication(userId, type) {
         const storeName = type === 'beta' ? 'betaApplications' : 'devApplications';
         const userApplications = await dbManager.getAll(storeName, 'userId', userId);
@@ -473,7 +456,6 @@ class ApplicationManager {
             return { canSubmit: true };
         }
 
-        // Сортируем по дате (последняя первая)
         userApplications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
         const lastApplication = userApplications[0];
         const lastApplicationDate = new Date(lastApplication.createdAt);
@@ -512,7 +494,6 @@ class SiteContentManager {
             }
             return content;
         } catch (error) {
-            console.error('Ошибка инициализации контента:', error);
             return this.defaultContent;
         }
     }
@@ -548,11 +529,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 async function initializeApp() {
     try {
-        // Ждем инициализации базы данных
         await dbManager.init();
         await siteContentManager.initialize();
         
-        // Preloader
         const preloader = document.querySelector('.preloader');
         const content = document.querySelector('.content');
         const percentage = document.querySelector('.loader-percentage');
@@ -581,7 +560,6 @@ async function initializeApp() {
             percentage.textContent = Math.min(progress, 100).toFixed(0) + '%';
         }, 100);
 
-        // Initialize event listeners
         initializeEventListeners();
         initializeSecretAdminCombo();
         
@@ -589,7 +567,6 @@ async function initializeApp() {
         console.error('Ошибка инициализации приложения:', error);
         document.querySelector('.preloader').style.display = 'none';
         document.querySelector('.content').classList.remove('hidden');
-        alert('Ошибка загрузки приложения. Пожалуйста, обновите страницу.');
     }
 }
 
@@ -615,10 +592,8 @@ function initializeEventListeners() {
     document.querySelectorAll('.auth-tab').forEach(tab => {
         tab.addEventListener('click', function() {
             const tabName = this.getAttribute('data-tab');
-            
             document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
-            
             this.classList.add('active');
             document.getElementById(tabName + 'Form').classList.add('active');
         });
@@ -631,7 +606,12 @@ function initializeEventListeners() {
     // Navigation auth
     document.getElementById('navAuthBtn').addEventListener('click', showAuthModal);
     document.getElementById('userLogout').addEventListener('click', handleLogout);
-    document.getElementById('notificationsBtn').addEventListener('click', toggleNotifications);
+    
+    // Notifications button
+    const notificationsBtn = document.getElementById('notificationsBtn');
+    if (notificationsBtn) {
+        notificationsBtn.addEventListener('click', toggleNotifications);
+    }
 
     // Application buttons
     document.querySelectorAll('.beta-btn').forEach(btn => {
@@ -642,7 +622,6 @@ function initializeEventListeners() {
                 return;
             }
             
-            // Проверяем возможность подачи заявки
             const canSubmit = await applicationManager.canSubmitApplication(user.id, 'beta');
             if (!canSubmit.canSubmit) {
                 alert(`Вы уже подавали заявку недавно. Следующую заявку можно подать через ${canSubmit.daysLeft} ${applicationManager.getDayText(canSubmit.daysLeft)}`);
@@ -661,7 +640,6 @@ function initializeEventListeners() {
                 return;
             }
             
-            // Проверяем возможность подачи заявки
             const canSubmit = await applicationManager.canSubmitApplication(user.id, 'dev');
             if (!canSubmit.canSubmit) {
                 alert(`Вы уже подавали заявку недавно. Следующую заявку можно подать через ${canSubmit.daysLeft} ${applicationManager.getDayText(canSubmit.daysLeft)}`);
@@ -677,13 +655,30 @@ function initializeEventListeners() {
     document.getElementById('devForm').addEventListener('submit', handleDevApplication);
 
     // Notification system
-    document.getElementById('enableNotifications').addEventListener('click', enableNotifications);
-    document.getElementById('skipNotifications').addEventListener('click', skipNotifications);
-    document.querySelector('.close-notifications').addEventListener('click', closeNotifications);
+    const enableNotificationsBtn = document.getElementById('enableNotifications');
+    const skipNotificationsBtn = document.getElementById('skipNotifications');
+    const closeNotificationsBtn = document.querySelector('.close-notifications');
+    
+    if (enableNotificationsBtn) {
+        enableNotificationsBtn.addEventListener('click', enableNotifications);
+    }
+    if (skipNotificationsBtn) {
+        skipNotificationsBtn.addEventListener('click', skipNotifications);
+    }
+    if (closeNotificationsBtn) {
+        closeNotificationsBtn.addEventListener('click', closeNotifications);
+    }
 
     // Admin system
-    document.getElementById('logoutBtn').addEventListener('click', handleAdminLogout);
-    document.getElementById('saveContent').addEventListener('click', saveContent);
+    const logoutBtn = document.getElementById('logoutBtn');
+    const saveContentBtn = document.getElementById('saveContent');
+    
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', handleAdminLogout);
+    }
+    if (saveContentBtn) {
+        saveContentBtn.addEventListener('click', saveContent);
+    }
 
     // Modal close handlers
     document.querySelectorAll('.close').forEach(closeBtn => {
@@ -704,10 +699,8 @@ function initializeEventListeners() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             const tabId = this.getAttribute('data-tab');
-            
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
             this.classList.add('active');
             document.getElementById(tabId + 'Tab').classList.add('active');
             
@@ -730,29 +723,6 @@ function initializeEventListeners() {
             }
         });
     });
-
-    // Navbar scroll effect
-    window.addEventListener('scroll', () => {
-        const navbar = document.querySelector('.navbar');
-        if (window.scrollY > 100) {
-            navbar.style.background = 'rgba(255, 255, 255, 0.98)';
-            navbar.style.boxShadow = '0 2px 20px rgba(0, 0, 0, 0.1)';
-        } else {
-            navbar.style.background = 'rgba(255, 255, 255, 0.95)';
-            navbar.style.boxShadow = 'none';
-        }
-    });
-
-    // Auto-logout after 1 hour
-    setTimeout(() => {
-        if (passwordManager.isLoggedIn()) {
-            passwordManager.setLoggedIn(false);
-            if (document.getElementById('adminPanel') && !document.getElementById('adminPanel').classList.contains('hidden')) {
-                hideAdminPanel();
-                alert('Сессия истекла. Пожалуйста, войдите снова.');
-            }
-        }
-    }, 3600000);
 }
 
 // Auth functions
@@ -760,11 +730,6 @@ async function checkAuthStatus() {
     const user = userManager.getCurrentUser();
     if (user) {
         await showUserMenu(user);
-        if (!user.notificationPermission && Notification.permission === 'default') {
-            setTimeout(() => {
-                document.getElementById('notificationModal').style.display = 'block';
-            }, 2000);
-        }
     } else {
         showAuthButton();
     }
@@ -775,18 +740,27 @@ function showAuthModal() {
 }
 
 async function showUserMenu(user) {
-    document.getElementById('navAuthBtn').classList.add('hidden');
-    document.getElementById('userMenu').classList.remove('hidden');
-    document.getElementById('userName').textContent = `${user.firstName} ${user.lastName}`;
-    
-    const unreadCount = await userManager.getUnreadNotificationsCount(user.id);
+    const navAuthBtn = document.getElementById('navAuthBtn');
+    const userMenu = document.getElementById('userMenu');
+    const userName = document.getElementById('userName');
     const notificationsBtn = document.getElementById('notificationsBtn');
-    notificationsBtn.textContent = unreadCount > 0 ? `🔔 (${unreadCount})` : '🔔';
+    
+    if (navAuthBtn) navAuthBtn.classList.add('hidden');
+    if (userMenu) userMenu.classList.remove('hidden');
+    if (userName) userName.textContent = `${user.firstName} ${user.lastName}`;
+    
+    if (notificationsBtn) {
+        const unreadCount = await userManager.getUnreadNotificationsCount(user.id);
+        notificationsBtn.textContent = unreadCount > 0 ? `🔔 (${unreadCount})` : '🔔';
+    }
 }
 
 function showAuthButton() {
-    document.getElementById('navAuthBtn').classList.remove('hidden');
-    document.getElementById('userMenu').classList.add('hidden');
+    const navAuthBtn = document.getElementById('navAuthBtn');
+    const userMenu = document.getElementById('userMenu');
+    
+    if (navAuthBtn) navAuthBtn.classList.remove('hidden');
+    if (userMenu) userMenu.classList.add('hidden');
 }
 
 async function handleLogin(e) {
@@ -799,14 +773,9 @@ async function handleLogin(e) {
         await showUserMenu(user);
         document.getElementById('authModal').style.display = 'none';
         e.target.reset();
-        
-        if (Notification.permission === 'default') {
-            setTimeout(() => {
-                document.getElementById('notificationModal').style.display = 'block';
-            }, 1000);
-        }
+        alert('✅ Вход выполнен успешно!');
     } catch (error) {
-        alert(error.message);
+        alert('❌ ' + error.message);
     }
 }
 
@@ -819,12 +788,12 @@ async function handleRegister(e) {
     const confirmPassword = document.getElementById('regConfirmPassword').value;
 
     if (password !== confirmPassword) {
-        alert('Пароли не совпадают');
+        alert('❌ Пароли не совпадают');
         return;
     }
 
     if (password.length < 6) {
-        alert('Пароль должен содержать минимум 6 символов');
+        alert('❌ Пароль должен содержать минимум 6 символов');
         return;
     }
 
@@ -833,35 +802,35 @@ async function handleRegister(e) {
         await showUserMenu(user);
         document.getElementById('authModal').style.display = 'none';
         e.target.reset();
-        alert('Регистрация успешна!');
-        
-        setTimeout(() => {
-            document.getElementById('notificationModal').style.display = 'block';
-        }, 1000);
+        alert('✅ Регистрация успешна!');
     } catch (error) {
-        alert(error.message);
+        alert('❌ ' + error.message);
     }
 }
 
 function handleLogout() {
     userManager.logout();
     showAuthButton();
-    closeNotifications();
-    alert('Вы успешно вышли из аккаунта');
+    alert('✅ Вы успешно вышли из аккаунта');
 }
 
 // Notification functions
 async function enableNotifications() {
-    const permissionGranted = await notificationManager.requestPermission();
+    if (!('Notification' in window)) {
+        alert('❌ Ваш браузер не поддерживает уведомления');
+        return;
+    }
+
+    const permission = await Notification.requestPermission();
     
-    if (permissionGranted) {
+    if (permission === 'granted') {
         const user = userManager.getCurrentUser();
         if (user) {
             await userManager.updateUser(user.id, { notificationPermission: true });
         }
-        alert('Уведомления разрешены!');
+        alert('✅ Уведомления разрешены!');
     } else {
-        alert('Для получения уведомлений необходимо разрешить их в настройках браузера');
+        alert('❌ Уведомления заблокированы');
     }
     
     document.getElementById('notificationModal').style.display = 'none';
@@ -871,60 +840,18 @@ function skipNotifications() {
     document.getElementById('notificationModal').style.display = 'none';
 }
 
-async function toggleNotifications() {
+function toggleNotifications() {
     const notificationsPanel = document.getElementById('userNotifications');
-    if (notificationsPanel.classList.contains('hidden')) {
-        await showNotifications();
-    } else {
-        closeNotifications();
+    if (notificationsPanel) {
+        notificationsPanel.classList.toggle('hidden');
     }
-}
-
-async function showNotifications() {
-    const user = userManager.getCurrentUser();
-    if (!user) return;
-
-    const notificationsList = document.getElementById('notificationsList');
-    notificationsList.innerHTML = '';
-
-    const notifications = await userManager.getNotifications(user.id);
-
-    if (!notifications || notifications.length === 0) {
-        notificationsList.innerHTML = '<p>У вас пока нет уведомлений</p>';
-    } else {
-        // Сортируем уведомления по дате (новые сверху)
-        notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        
-        for (const notification of notifications) {
-            const notificationElement = document.createElement('div');
-            notificationElement.className = `notification-item ${notification.type} ${notification.read ? '' : 'unread'}`;
-            notificationElement.innerHTML = `
-                <div class="notification-header">
-                    <div class="notification-title">${notification.title}</div>
-                    <div class="notification-time">${new Date(notification.createdAt).toLocaleDateString()}</div>
-                </div>
-                <div class="notification-message">${notification.message}</div>
-                ${notification.adminComment ? `<div class="admin-comment"><strong>Комментарий администратора:</strong> ${notification.adminComment}</div>` : ''}
-            `;
-            
-            notificationElement.addEventListener('click', async () => {
-                if (!notification.read) {
-                    await userManager.markNotificationAsRead(notification.id);
-                    notificationElement.classList.remove('unread');
-                    const unreadCount = await userManager.getUnreadNotificationsCount(user.id);
-                    document.getElementById('notificationsBtn').textContent = unreadCount > 0 ? `🔔 (${unreadCount})` : '🔔';
-                }
-            });
-            
-            notificationsList.appendChild(notificationElement);
-        }
-    }
-
-    document.getElementById('userNotifications').classList.remove('hidden');
 }
 
 function closeNotifications() {
-    document.getElementById('userNotifications').classList.add('hidden');
+    const notificationsPanel = document.getElementById('userNotifications');
+    if (notificationsPanel) {
+        notificationsPanel.classList.add('hidden');
+    }
 }
 
 // Application functions
@@ -932,7 +859,7 @@ async function handleBetaApplication(e) {
     e.preventDefault();
     const user = userManager.getCurrentUser();
     if (!user) {
-        alert('Пожалуйста, войдите в систему');
+        alert('❌ Пожалуйста, войдите в систему');
         return;
     }
 
@@ -953,18 +880,13 @@ async function handleBetaApplication(e) {
             applicationId: application.id
         });
 
-        notificationManager.showBrowserNotification(
-            'Заявка отправлена',
-            'Ваша заявка на бета-тестирование успешно отправлена!'
-        );
-
-        alert('Заявка отправлена! Мы уведомим вас о решении.');
+        alert('✅ Заявка отправлена! Мы уведомим вас о решении.');
         e.target.reset();
         document.getElementById('betaModal').style.display = 'none';
         
         await showUserMenu(userManager.getCurrentUser());
     } catch (error) {
-        alert('Ошибка при отправке заявки: ' + error.message);
+        alert('❌ ' + error.message);
     }
 }
 
@@ -972,7 +894,7 @@ async function handleDevApplication(e) {
     e.preventDefault();
     const user = userManager.getCurrentUser();
     if (!user) {
-        alert('Пожалуйста, войдите в систему');
+        alert('❌ Пожалуйста, войдите в систему');
         return;
     }
 
@@ -997,22 +919,445 @@ async function handleDevApplication(e) {
             applicationId: application.id
         });
 
-        notificationManager.showBrowserNotification(
-            'Заявка отправлена',
-            'Ваша заявка в команду разработки успешно отправлена!'
-        );
-
-        alert('Заявка отправлена! Мы рассмотрим вашу кандидатуру и свяжемся с вами.');
+        alert('✅ Заявка отправлена! Мы рассмотрим вашу кандидатуру и свяжемся с вами.');
         e.target.reset();
         document.getElementById('devModal').style.display = 'none';
         
         await showUserMenu(userManager.getCurrentUser());
     } catch (error) {
-        alert('Ошибка при отправке заявки: ' + error.message);
+        alert('❌ ' + error.message);
     }
 }
 
-// ... (остальной код админ-панели и функций остается без изменений)
+// Admin functions
+function showAdminLogin() {
+    const loginModal = document.createElement('div');
+    loginModal.className = 'login-modal';
+    loginModal.innerHTML = `
+        <div class="login-content">
+            <h2>Вход в админ панель</h2>
+            <form class="login-form" id="adminLoginForm">
+                <input type="password" id="adminPassword" placeholder="Введите пароль" required>
+                <div class="error-message" id="loginError">Неверный пароль!</div>
+                <button type="submit">Войти</button>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(loginModal);
 
-// Остальной код (админ-панель, загрузка заявок и т.д.) остается таким же как в предыдущей версии
-// Для экономии места не дублирую его, так как он не изменился
+    loginModal.style.display = 'block';
+
+    const adminLoginForm = document.getElementById('adminLoginForm');
+    if (adminLoginForm) {
+        adminLoginForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const password = document.getElementById('adminPassword').value;
+            const errorElement = document.getElementById('loginError');
+            
+            if (passwordManager.verifyPassword(password)) {
+                passwordManager.setLoggedIn(true);
+                loginModal.style.display = 'none';
+                document.body.removeChild(loginModal);
+                showAdminPanel();
+            } else {
+                if (errorElement) errorElement.style.display = 'block';
+            }
+        });
+    }
+
+    loginModal.addEventListener('click', (e) => {
+        if (e.target === loginModal) {
+            loginModal.style.display = 'none';
+            document.body.removeChild(loginModal);
+        }
+    });
+}
+
+async function showAdminPanel() {
+    const content = document.querySelector('.content');
+    const adminPanel = document.getElementById('adminPanel');
+    
+    if (content) content.classList.add('hidden');
+    if (adminPanel) adminPanel.classList.remove('hidden');
+    
+    await loadApplications();
+    await loadContent();
+}
+
+function hideAdminPanel() {
+    const adminPanel = document.getElementById('adminPanel');
+    const content = document.querySelector('.content');
+    
+    if (adminPanel) adminPanel.classList.add('hidden');
+    if (content) content.classList.remove('hidden');
+}
+
+function handleAdminLogout() {
+    passwordManager.setLoggedIn(false);
+    hideAdminPanel();
+    alert('✅ Вы вышли из админ-панели');
+}
+
+async function loadApplications() {
+    await loadBetaApplications();
+    await loadDevApplications();
+}
+
+async function loadBetaApplications() {
+    const applications = await applicationManager.getBetaApplications();
+    const applicationsList = document.getElementById('betaApplications');
+    if (!applicationsList) return;
+    
+    applicationsList.innerHTML = '';
+    
+    if (applications.length === 0) {
+        applicationsList.innerHTML = '<p>Бета-заявок пока нет</p>';
+        return;
+    }
+    
+    applications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    for (const app of applications) {
+        const user = await dbManager.get('users', app.userId);
+        const appElement = document.createElement('div');
+        appElement.className = 'application-item';
+        appElement.innerHTML = `
+            <h4>Бета-заявка <span class="status-badge status-${app.status}">${getStatusText(app.status)}</span></h4>
+            <p><strong>ID:</strong> ${app.id}</p>
+            <p><strong>Пользователь:</strong> ${user ? `${user.firstName} ${user.lastName} (${user.email})` : 'N/A'}</p>
+            <p><strong>Имя:</strong> ${app.firstName} ${app.lastName}</p>
+            <p><strong>Email:</strong> ${app.email}</p>
+            <p><strong>Причина:</strong> ${app.reason}</p>
+            <p><strong>Время подачи:</strong> ${new Date(app.createdAt).toLocaleString()}</p>
+            ${app.adminComment ? `<p><strong>Комментарий админа:</strong> ${app.adminComment}</p>` : ''}
+            ${app.status === 'pending' ? `
+                <div class="action-buttons">
+                    <button class="approve-btn" data-id="${app.id}" data-type="beta">Одобрить</button>
+                    <button class="reject-btn" data-id="${app.id}" data-type="beta">Отклонить</button>
+                    <button class="comment-btn" data-id="${app.id}" data-type="beta">Комментарий</button>
+                </div>
+            ` : ''}
+            <button class="delete-btn" data-id="${app.id}" data-type="beta">Удалить</button>
+        `;
+        applicationsList.appendChild(appElement);
+    }
+
+    // Добавляем обработчики для кнопок
+    addAdminButtonHandlers();
+}
+
+async function loadDevApplications() {
+    const applications = await applicationManager.getDevApplications();
+    const applicationsList = document.getElementById('devApplications');
+    if (!applicationsList) return;
+    
+    applicationsList.innerHTML = '';
+    
+    if (applications.length === 0) {
+        applicationsList.innerHTML = '<p>Заявок в команду пока нет</p>';
+        return;
+    }
+    
+    applications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    const roleNames = {
+        'frontend': 'Frontend разработчик',
+        'backend': 'Backend разработчик', 
+        'fullstack': 'Fullstack разработчик',
+        'designer': 'UI/UX дизайнер',
+        'qa': 'QA инженер',
+        'devops': 'DevOps инженер',
+        'marketing': 'Маркетолог',
+        'other': 'Другое'
+    };
+    
+    for (const app of applications) {
+        const user = await dbManager.get('users', app.userId);
+        const appElement = document.createElement('div');
+        appElement.className = 'application-item';
+        appElement.innerHTML = `
+            <h4>Заявка в команду <span class="status-badge status-${app.status}">${getStatusText(app.status)}</span></h4>
+            <p><strong>ID:</strong> ${app.id}</p>
+            <p><strong>Пользователь:</strong> ${user ? `${user.firstName} ${user.lastName} (${user.email})` : 'N/A'}</p>
+            <p><strong>Имя:</strong> ${app.firstName} ${app.lastName}</p>
+            <p><strong>Email:</strong> ${app.email}</p>
+            <p><strong>Роль:</strong> <span class="role-badge ${app.role}">${roleNames[app.role] || app.role}</span></p>
+            <p><strong>Опыт:</strong> ${app.experience} лет</p>
+            <p><strong>Навыки:</strong> ${app.skills}</p>
+            <p><strong>Мотивация:</strong> ${app.motivation}</p>
+            ${app.portfolio ? `<p><strong>Портфолио:</strong> <a href="${app.portfolio}" target="_blank">${app.portfolio}</a></p>` : ''}
+            <p><strong>Время подачи:</strong> ${new Date(app.createdAt).toLocaleString()}</p>
+            ${app.adminComment ? `<p><strong>Комментарий админа:</strong> ${app.adminComment}</p>` : ''}
+            ${app.status === 'pending' ? `
+                <div class="action-buttons">
+                    <button class="approve-btn" data-id="${app.id}" data-type="dev">Одобрить</button>
+                    <button class="reject-btn" data-id="${app.id}" data-type="dev">Отклонить</button>
+                    <button class="comment-btn" data-id="${app.id}" data-type="dev">Комментарий</button>
+                </div>
+            ` : ''}
+            <button class="delete-btn" data-id="${app.id}" data-type="dev">Удалить</button>
+        `;
+        applicationsList.appendChild(appElement);
+    }
+
+    // Добавляем обработчики для кнопок
+    addAdminButtonHandlers();
+}
+
+// Функция для добавления обработчиков кнопок админ-панели
+function addAdminButtonHandlers() {
+    // Обработчики для кнопок одобрения
+    document.querySelectorAll('.approve-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const appId = this.getAttribute('data-id');
+            const appType = this.getAttribute('data-type');
+            adminApproveApplication(appId, appType);
+        });
+    });
+
+    // Обработчики для кнопок отклонения
+    document.querySelectorAll('.reject-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const appId = this.getAttribute('data-id');
+            const appType = this.getAttribute('data-type');
+            adminRejectApplication(appId, appType);
+        });
+    });
+
+    // Обработчики для кнопок комментариев
+    document.querySelectorAll('.comment-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const appId = this.getAttribute('data-id');
+            const appType = this.getAttribute('data-type');
+            adminShowCommentModal(appId, appType);
+        });
+    });
+
+    // Обработчики для кнопок удаления
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const appId = this.getAttribute('data-id');
+            const appType = this.getAttribute('data-type');
+            adminDeleteApplication(appId, appType);
+        });
+    });
+}
+
+async function loadUsersList() {
+    const users = await userManager.getAllUsers();
+    const usersList = document.getElementById('usersList');
+    if (!usersList) return;
+    
+    usersList.innerHTML = '';
+    
+    if (users.length === 0) {
+        usersList.innerHTML = '<p>Пользователей пока нет</p>';
+        return;
+    }
+    
+    users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    for (const user of users) {
+        const userElement = document.createElement('div');
+        userElement.className = 'application-item';
+        userElement.innerHTML = `
+            <h4>Пользователь</h4>
+            <p><strong>ID:</strong> ${user.id}</p>
+            <p><strong>Имя:</strong> ${user.firstName} ${user.lastName}</p>
+            <p><strong>Email:</strong> ${user.email}</p>
+            <p><strong>Зарегистрирован:</strong> ${new Date(user.createdAt).toLocaleString()}</p>
+            <p><strong>Последний вход:</strong> ${user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Никогда'}</p>
+        `;
+        usersList.appendChild(userElement);
+    }
+}
+
+function getStatusText(status) {
+    const statusTexts = {
+        'pending': 'На рассмотрении',
+        'approved': 'Одобрено', 
+        'rejected': 'Отклонено'
+    };
+    return statusTexts[status] || status;
+}
+
+// Admin application actions
+async function adminApproveApplication(applicationId, type) {
+    if (confirm('Одобрить эту заявку?')) {
+        try {
+            const application = await applicationManager.updateApplicationStatus(applicationId, type, 'approved');
+            if (application) {
+                const user = await dbManager.get('users', application.userId);
+                if (user) {
+                    await userManager.addNotification(user.id, {
+                        title: type === 'beta' ? 'Заявка на бета-тестирование одобрена' : 'Заявка в команду одобрена',
+                        message: type === 'beta' 
+                            ? 'Поздравляем! Ваша заявка на бета-тестирование ArBrowser была одобрена. Мы свяжемся с вами в ближайшее время.'
+                            : 'Поздравляем! Ваша заявка на участие в команде разработки была одобрена. Мы свяжемся с вами для обсуждения деталей.',
+                        type: 'success',
+                        applicationId: applicationId
+                    });
+                }
+                
+                await loadApplications();
+                alert('✅ Заявка одобрена! Пользователь получил уведомление.');
+            }
+        } catch (error) {
+            alert('❌ Ошибка: ' + error.message);
+        }
+    }
+}
+
+async function adminRejectApplication(applicationId, type) {
+    adminShowCommentModal(applicationId, type, true);
+}
+
+function adminShowCommentModal(applicationId, type, isRejection = false) {
+    currentCommentAppId = applicationId;
+    currentCommentAppType = type;
+    currentCommentIsRejection = isRejection;
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal comment-modal';
+    modal.innerHTML = `
+        <div class="modal-content comment-content">
+            <span class="close">&times;</span>
+            <h2>${isRejection ? 'Отклонить заявку' : 'Добавить комментарий'}</h2>
+            <textarea class="comment-textarea" placeholder="${isRejection ? 'Укажите причину отказа...' : 'Введите ваш комментарий...'}" required></textarea>
+            <div class="comment-actions">
+                <button class="secondary-btn" id="cancelComment">Отмена</button>
+                <button class="${isRejection ? 'reject-btn' : 'comment-btn'}" id="submitComment">
+                    ${isRejection ? 'Отклонить' : 'Отправить'}
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    
+    // Обработчики для модального окна
+    modal.querySelector('.close').addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
+    
+    modal.querySelector('#cancelComment').addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
+    
+    modal.querySelector('#submitComment').addEventListener('click', adminSubmitComment);
+    
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            document.body.removeChild(modal);
+        }
+    });
+}
+
+async function adminSubmitComment() {
+    const modal = document.querySelector('.comment-modal');
+    if (!modal) return;
+    
+    const comment = modal.querySelector('.comment-textarea').value;
+    
+    if (!comment.trim()) {
+        alert('❌ Пожалуйста, введите комментарий');
+        return;
+    }
+    
+    try {
+        const status = currentCommentIsRejection ? 'rejected' : 'pending';
+        const application = await applicationManager.updateApplicationStatus(currentCommentAppId, currentCommentAppType, status, comment);
+        
+        if (application) {
+            const user = await dbManager.get('users', application.userId);
+            if (user) {
+                if (currentCommentIsRejection) {
+                    await userManager.addNotification(user.id, {
+                        title: currentCommentAppType === 'beta' ? 'Заявка на бета-тестирование отклонена' : 'Заявка в команду отклонена',
+                        message: currentCommentAppType === 'beta'
+                            ? 'К сожалению, ваша заявка на бета-тестирование ArBrowser была отклонена.'
+                            : 'К сожалению, ваша заявка на участие в команде разработки была отклонена.',
+                        type: 'error',
+                        applicationId: currentCommentAppId,
+                        adminComment: comment
+                    });
+                } else {
+                    await userManager.addNotification(user.id, {
+                        title: 'Комментарий к вашей заявке',
+                        message: 'Администратор оставил комментарий к вашей заявке.',
+                        type: 'warning',
+                        applicationId: currentCommentAppId,
+                        adminComment: comment
+                    });
+                }
+            }
+            
+            document.body.removeChild(modal);
+            await loadApplications();
+            alert(currentCommentIsRejection ? '✅ Заявка отклонена!' : '✅ Комментарий добавлен!');
+        }
+    } catch (error) {
+        alert('❌ Ошибка: ' + error.message);
+    }
+}
+
+async function adminDeleteApplication(applicationId, type) {
+    if (confirm('Вы уверены, что хотите удалить эту заявку?')) {
+        try {
+            await applicationManager.deleteApplication(applicationId, type);
+            await loadApplications();
+            alert('✅ Заявка удалена!');
+        } catch (error) {
+            alert('❌ Ошибка: ' + error.message);
+        }
+    }
+}
+
+async function saveContent() {
+    const heroTitle = document.getElementById('heroTitle');
+    const heroSubtitle = document.getElementById('heroSubtitle');
+    const releaseDate = document.getElementById('releaseDate');
+    
+    if (!heroTitle || !heroSubtitle || !releaseDate) {
+        alert('❌ Элементы формы не найдены');
+        return;
+    }
+
+    const siteContent = {
+        heroTitle: heroTitle.value,
+        heroSubtitle: heroSubtitle.value,
+        releaseDate: releaseDate.value
+    };
+    
+    try {
+        await siteContentManager.updateContent(siteContent);
+        
+        const heroTitleElement = document.querySelector('.hero-title');
+        const heroSubtitleElement = document.querySelector('.hero-subtitle');
+        const releaseInfoElement = document.querySelector('.release-info h4');
+        
+        if (heroTitleElement) heroTitleElement.textContent = siteContent.heroTitle;
+        if (heroSubtitleElement) heroSubtitleElement.textContent = siteContent.heroSubtitle;
+        if (releaseInfoElement) releaseInfoElement.textContent = `📅 Примерный релиз: ${siteContent.releaseDate}`;
+        
+        alert('✅ Изменения сохранены!');
+    } catch (error) {
+        alert('❌ Ошибка сохранения: ' + error.message);
+    }
+}
+
+async function loadContent() {
+    try {
+        const content = await siteContentManager.getContent();
+        const heroTitle = document.getElementById('heroTitle');
+        const heroSubtitle = document.getElementById('heroSubtitle');
+        const releaseDate = document.getElementById('releaseDate');
+        
+        if (heroTitle) heroTitle.value = content.heroTitle;
+        if (heroSubtitle) heroSubtitle.value = content.heroSubtitle;
+        if (releaseDate) releaseDate.value = content.releaseDate;
+    } catch (error) {
+        console.error('Ошибка загрузки контента:', error);
+    }
+}
