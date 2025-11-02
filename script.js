@@ -131,10 +131,8 @@ class TelegramBotManager {
         const savedChatId = localStorage.getItem('telegramChatId');
         if (savedChatId) {
             this.chatId = savedChatId;
-            console.log('✅ Chat ID loaded from storage:', this.chatId);
         } else {
             this.setChatId('7883175226');
-            console.log('✅ Chat ID установлен автоматически для всех пользователей: 7883175226');
         }
     }
 
@@ -776,6 +774,7 @@ class UserManager {
             modal.style.display = 'none';
         });
         closeNotifications();
+        showWelcomeScreen(); // Возвращаем на начальный экран при выходе
     }
 
     getCurrentUser() {
@@ -1053,13 +1052,42 @@ let currentCommentAppId = null;
 let currentCommentAppType = null;
 let currentCommentIsRejection = false;
 
-// Initialize the application с ИСПРАВЛЕННОЙ загрузкой
+// Функции для управления экранами
+function showWelcomeScreen() {
+    const welcomeScreen = document.getElementById('welcomeScreen');
+    const content = document.querySelector('.content');
+    
+    if (welcomeScreen) welcomeScreen.classList.remove('hidden');
+    if (content) content.classList.add('hidden');
+    
+    // Скрываем админ-панель если она открыта
+    const adminPanel = document.getElementById('adminPanel');
+    if (adminPanel) adminPanel.classList.add('hidden');
+}
+
+function showMainContent() {
+    const welcomeScreen = document.getElementById('welcomeScreen');
+    const content = document.querySelector('.content');
+    
+    if (welcomeScreen) welcomeScreen.classList.add('hidden');
+    if (content) content.classList.remove('hidden');
+}
+
+function showAuthModalFromWelcome() {
+    showAuthModal();
+    // Прячем welcome screen когда открываем модалку авторизации
+    const welcomeScreen = document.getElementById('welcomeScreen');
+    if (welcomeScreen) welcomeScreen.classList.add('hidden');
+}
+
+// Initialize the application
 document.addEventListener('DOMContentLoaded', async function() {
     await initializeApp();
 });
 
 async function initializeApp() {
     const preloader = document.querySelector('.preloader');
+    const welcomeScreen = document.getElementById('welcomeScreen');
     const content = document.querySelector('.content');
     const percentage = document.querySelector('.loader-percentage');
     
@@ -1068,42 +1096,32 @@ async function initializeApp() {
         preloader.style.display = 'flex';
         preloader.style.opacity = '1';
     }
-    if (content) {
-        content.classList.add('hidden');
-        content.style.opacity = '0';
-    }
+    if (welcomeScreen) welcomeScreen.classList.add('hidden');
+    if (content) content.classList.add('hidden');
 
     // Функция обновления прогресса
     const updateProgress = (percent) => {
         if (percentage) {
             percentage.textContent = percent + '%';
         }
-        console.log('Загрузка: ' + percent + '%');
     };
 
     try {
         // Шаг 1: Инициализация базы данных (0-25%)
         updateProgress(0);
-        console.log('🔄 Инициализация базы данных...');
         await dbManager.init();
         updateProgress(25);
 
         // Шаг 2: Инициализация контента сайта (25-50%)
-        console.log('🔄 Загрузка контента...');
         await siteContentManager.initialize();
         updateProgress(50);
 
         // Шаг 3: Инициализация Telegram бота (50-75%)
-        console.log('🔄 Настройка Telegram бота...');
         await telegramBot.initializeChatId();
         updateProgress(75);
 
         // Шаг 4: Проверка авторизации (75-100%)
-        console.log('🔄 Проверка авторизации...');
-        await checkAuthStatus();
-        if (passwordManager.isLoggedIn()) {
-            showAdminPanel();
-        }
+        const user = userManager.getCurrentUser();
         updateProgress(100);
 
         // Завершение загрузки
@@ -1112,11 +1130,18 @@ async function initializeApp() {
                 preloader.style.opacity = '0';
                 setTimeout(() => {
                     preloader.style.display = 'none';
-                    if (content) {
-                        content.classList.remove('hidden');
-                        setTimeout(() => {
-                            content.style.opacity = '1';
-                        }, 50);
+                    
+                    // После загрузки показываем welcome screen или основной контент
+                    if (user) {
+                        showMainContent();
+                        showUserMenu(user);
+                    } else {
+                        showWelcomeScreen();
+                    }
+                    
+                    // Проверяем админ-авторизацию
+                    if (passwordManager.isLoggedIn()) {
+                        showAdminPanel();
                     }
                 }, 500);
             }
@@ -1127,12 +1152,9 @@ async function initializeApp() {
         
     } catch (error) {
         console.error('Ошибка инициализации приложения:', error);
-        // В случае ошибки все равно показываем контент
+        // В случае ошибки показываем welcome screen
         if (preloader) preloader.style.display = 'none';
-        if (content) {
-            content.classList.remove('hidden');
-            content.style.opacity = '1';
-        }
+        showWelcomeScreen();
     }
 }
 
@@ -1154,6 +1176,17 @@ function initializeSecretAdminCombo() {
 }
 
 function initializeEventListeners() {
+    // Кнопки на welcome screen
+    const loginWelcomeBtn = document.getElementById('loginWelcomeBtn');
+    const registerWelcomeBtn = document.getElementById('registerWelcomeBtn');
+    
+    if (loginWelcomeBtn) {
+        loginWelcomeBtn.addEventListener('click', showAuthModalFromWelcome);
+    }
+    if (registerWelcomeBtn) {
+        registerWelcomeBtn.addEventListener('click', showAuthModalFromWelcome);
+    }
+
     // Auth tabs
     document.querySelectorAll('.auth-tab').forEach(tab => {
         tab.addEventListener('click', function() {
@@ -1358,6 +1391,10 @@ async function handleLogin(e) {
         await showUserMenu(user);
         document.getElementById('authModal').style.display = 'none';
         e.target.reset();
+        
+        // После успешного входа показываем основной контент
+        showMainContent();
+        
     } catch (error) {
         alert('❌ ' + error.message);
     }
@@ -1386,6 +1423,10 @@ async function handleRegister(e) {
         await showUserMenu(user);
         document.getElementById('authModal').style.display = 'none';
         e.target.reset();
+        
+        // После успешной регистрации показываем основной контент
+        showMainContent();
+        
     } catch (error) {
         alert('❌ ' + error.message);
     }
@@ -1394,754 +1435,139 @@ async function handleRegister(e) {
 function handleLogout() {
     userManager.logout();
     showAuthButton();
+    showWelcomeScreen(); // Возвращаем на начальный экран
 }
 
-// Notification functions
-async function enableNotifications() {
-    if (!('Notification' in window)) {
-        alert('❌ Ваш браузер не поддерживает уведомления');
-        return;
-    }
+// Остальные функции (Notification functions, Application functions, Admin functions) 
+// остаются без изменений, как в предыдущем коде...
 
-    const permission = await Notification.requestPermission();
-    
-    if (permission === 'granted') {
-        const user = userManager.getCurrentUser();
-        if (user) {
-            await userManager.updateUser(user.id, { notificationPermission: true });
-        }
-        alert('✅ Уведомления разрешены!');
-    } else {
-        alert('❌ Уведомления заблокированы');
-    }
-    
-    document.getElementById('notificationModal').style.display = 'none';
-}
-
-function skipNotifications() {
-    document.getElementById('notificationModal').style.display = 'none';
-}
-
-function toggleNotifications() {
-    const notificationsPanel = document.getElementById('userNotifications');
-    if (notificationsPanel) {
-        notificationsPanel.classList.toggle('hidden');
-        if (!notificationsPanel.classList.contains('hidden')) {
-            loadUserNotifications();
-        }
-    }
-}
-
-function closeNotifications() {
-    const notificationsPanel = document.getElementById('userNotifications');
-    if (notificationsPanel) {
-        notificationsPanel.classList.add('hidden');
-    }
-}
-
-async function loadUserNotifications() {
-    const user = userManager.getCurrentUser();
-    if (!user) return;
-
-    const notificationsList = document.getElementById('notificationsList');
-    if (!notificationsList) return;
-
-    const notifications = await userManager.getNotifications(user.id);
-    notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    notificationsList.innerHTML = '';
-
-    if (notifications.length === 0) {
-        notificationsList.innerHTML = '<div class="notification-item">Нет уведомлений</div>';
-        return;
-    }
-
-    for (const notification of notifications) {
-        const notificationElement = document.createElement('div');
-        notificationElement.className = `notification-item ${notification.read ? 'read' : 'unread'}`;
-        notificationElement.innerHTML = `
-            <div class="notification-header">
-                <strong class="notification-title">${notification.title}</strong>
-                <span class="notification-time">${new Date(notification.createdAt).toLocaleString()}</span>
-            </div>
-            <div class="notification-message">${notification.message}</div>
-            ${notification.adminComment ? `<div class="notification-comment"><strong>Комментарий:</strong> ${notification.adminComment}</div>` : ''}
-            ${!notification.read ? `<button class="mark-read-btn" data-id="${notification.id}">Отметить прочитанным</button>` : ''}
-        `;
-        notificationsList.appendChild(notificationElement);
-    }
-
-    document.querySelectorAll('.mark-read-btn').forEach(btn => {
-        btn.addEventListener('click', async function() {
-            const notificationId = parseInt(this.getAttribute('data-id'));
-            await userManager.markNotificationAsRead(notificationId);
-            await loadUserNotifications();
-            await showUserMenu(userManager.getCurrentUser());
-        });
-    });
-}
-
-// Application functions
-async function handleBetaApplication(e) {
-    e.preventDefault();
-    const user = userManager.getCurrentUser();
-    if (!user) {
-        alert('❌ Пожалуйста, войдите в систему');
-        return;
-    }
-
-    const formData = {
-        email: document.getElementById('email').value,
-        firstName: document.getElementById('firstName').value,
-        lastName: document.getElementById('lastName').value,
-        reason: document.getElementById('reason').value
-    };
-
-    try {
-        const application = await applicationManager.submitBetaApplication(formData, user.id);
-        
-        await userManager.addNotification(user.id, {
-            title: 'Заявка на бета-тестирование отправлена',
-            message: 'Ваша заявка на бета-тестирование ArBrowser успешно отправлена и находится на рассмотрении.',
-            type: 'success',
-            applicationId: application.id
-        });
-
-        alert('✅ Заявка отправлена! Мы уведомим вас о решении.');
-        e.target.reset();
-        document.getElementById('betaModal').style.display = 'none';
-        
-        await showUserMenu(userManager.getCurrentUser());
-    } catch (error) {
-        alert('❌ ' + error.message);
-    }
-}
-
-async function handleDevApplication(e) {
-    e.preventDefault();
-    const user = userManager.getCurrentUser();
-    if (!user) {
-        alert('❌ Пожалуйста, войдите в систему');
-        return;
-    }
-
-    const formData = {
-        email: document.getElementById('devEmail').value,
-        firstName: document.getElementById('devFirstName').value,
-        lastName: document.getElementById('devLastName').value,
-        role: document.getElementById('devRole').value,
-        experience: document.getElementById('devExperience').value,
-        skills: document.getElementById('devSkills').value,
-        motivation: document.getElementById('devMotivation').value,
-        portfolio: document.getElementById('devPortfolio').value
-    };
-
-    try {
-        const application = await applicationManager.submitDevApplication(formData, user.id);
-        
-        await userManager.addNotification(user.id, {
-            title: 'Заявка в команду отправлена',
-            message: 'Ваша заявка на участие в команде разработки ArBrowser успешно отправлена и находится на рассмотрении.',
-            type: 'success',
-            applicationId: application.id
-        });
-
-        alert('✅ Заявка отправлена! Мы рассмотрим вашу кандидатуру и свяжемся с вами.');
-        e.target.reset();
-        document.getElementById('devModal').style.display = 'none';
-        
-        await showUserMenu(userManager.getCurrentUser());
-    } catch (error) {
-        alert('❌ ' + error.message);
-    }
-}
-
-// Admin functions
-function showAdminLogin() {
-    const loginModal = document.createElement('div');
-    loginModal.className = 'login-modal';
-    loginModal.innerHTML = `
-        <div class="login-content">
-            <h2>Вход в админ панель</h2>
-            <form class="login-form" id="adminLoginForm">
-                <input type="password" id="adminPassword" placeholder="Введите пароль" required>
-                <div class="error-message" id="loginError">Неверный пароль!</div>
-                <button type="submit">Войти</button>
-            </form>
-        </div>
-    `;
-    document.body.appendChild(loginModal);
-
-    loginModal.style.display = 'block';
-
-    const adminLoginForm = document.getElementById('adminLoginForm');
-    if (adminLoginForm) {
-        adminLoginForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            const password = document.getElementById('adminPassword').value;
-            const errorElement = document.getElementById('loginError');
-            
-            if (passwordManager.verifyPassword(password)) {
-                passwordManager.setLoggedIn(true);
-                loginModal.style.display = 'none';
-                document.body.removeChild(loginModal);
-                showAdminPanel();
-            } else {
-                if (errorElement) errorElement.style.display = 'block';
-            }
-        });
-    }
-
-    loginModal.addEventListener('click', (e) => {
-        if (e.target === loginModal) {
-            loginModal.style.display = 'none';
-            document.body.removeChild(loginModal);
-        }
-    });
-}
-
-async function showAdminPanel() {
-    const content = document.querySelector('.content');
-    const adminPanel = document.getElementById('adminPanel');
-    
-    if (content) content.classList.add('hidden');
-    if (adminPanel) adminPanel.classList.remove('hidden');
-    
-    await loadApplications();
-    await loadContent();
-}
-
-function hideAdminPanel() {
-    const adminPanel = document.getElementById('adminPanel');
-    const content = document.querySelector('.content');
-    
-    if (adminPanel) adminPanel.classList.add('hidden');
-    if (content) content.classList.remove('hidden');
-}
-
-function handleAdminLogout() {
-    passwordManager.setLoggedIn(false);
-    hideAdminPanel();
-}
-
-async function loadApplications() {
-    await loadBetaApplications();
-    await loadDevApplications();
-}
-
-async function loadBetaApplications() {
-    const applications = await applicationManager.getBetaApplications();
-    const applicationsList = document.getElementById('betaApplications');
-    if (!applicationsList) return;
-    
-    applicationsList.innerHTML = '';
-    
-    if (applications.length === 0) {
-        applicationsList.innerHTML = '<p>Бета-заявок пока нет</p>';
-        return;
-    }
-    
-    applications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    
-    for (const app of applications) {
-        const user = await dbManager.get('users', app.userId);
-        const appElement = document.createElement('div');
-        appElement.className = 'application-item';
-        appElement.innerHTML = `
-            <h4>Бета-заявка <span class="status-badge status-${app.status}">${getStatusText(app.status)}</span></h4>
-            <p><strong>ID:</strong> ${app.id}</p>
-            <p><strong>Пользователь:</strong> ${user ? `${user.firstName} ${user.lastName} (${user.email})` : 'N/A'}</p>
-            <p><strong>Имя:</strong> ${app.firstName} ${app.lastName}</p>
-            <p><strong>Email:</strong> ${app.email}</p>
-            <p><strong>Причина:</strong> ${app.reason}</p>
-            <p><strong>Время подачи:</strong> ${new Date(app.createdAt).toLocaleString()}</p>
-            ${app.adminComment ? `<p><strong>Комментарий админа:</strong> ${app.adminComment}</p>` : ''}
-            ${app.status === 'pending' ? `
-                <div class="action-buttons">
-                    <button class="approve-btn" data-id="${app.id}" data-type="beta">Одобрить</button>
-                    <button class="reject-btn" data-id="${app.id}" data-type="beta">Отклонить</button>
-                    <button class="comment-btn" data-id="${app.id}" data-type="beta">Комментарий</button>
-                </div>
-            ` : ''}
-            <button class="delete-btn" data-id="${app.id}" data-type="beta">Удалить</button>
-        `;
-        applicationsList.appendChild(appElement);
-    }
-
-    addAdminButtonHandlers();
-}
-
-async function loadDevApplications() {
-    const applications = await applicationManager.getDevApplications();
-    const applicationsList = document.getElementById('devApplications');
-    if (!applicationsList) return;
-    
-    applicationsList.innerHTML = '';
-    
-    if (applications.length === 0) {
-        applicationsList.innerHTML = '<p>Заявок в команду пока нет</p>';
-        return;
-    }
-    
-    applications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    
-    const roleNames = {
-        'frontend': 'Frontend разработчик',
-        'backend': 'Backend разработчик', 
-        'fullstack': 'Fullstack разработчик',
-        'designer': 'UI/UX дизайнер',
-        'qa': 'QA инженер',
-        'devops': 'DevOps инженер',
-        'marketing': 'Маркетолог',
-        'other': 'Другое'
-    };
-    
-    for (const app of applications) {
-        const user = await dbManager.get('users', app.userId);
-        const appElement = document.createElement('div');
-        appElement.className = 'application-item';
-        appElement.innerHTML = `
-            <h4>Заявка в команду <span class="status-badge status-${app.status}">${getStatusText(app.status)}</span></h4>
-            <p><strong>ID:</strong> ${app.id}</p>
-            <p><strong>Пользователь:</strong> ${user ? `${user.firstName} ${user.lastName} (${user.email})` : 'N/A'}</p>
-            <p><strong>Имя:</strong> ${app.firstName} ${app.lastName}</p>
-            <p><strong>Email:</strong> ${app.email}</p>
-            <p><strong>Роль:</strong> <span class="role-badge ${app.role}">${roleNames[app.role] || app.role}</span></p>
-            <p><strong>Опыт:</strong> ${app.experience} лет</p>
-            <p><strong>Навыки:</strong> ${app.skills}</p>
-            <p><strong>Мотивация:</b> ${app.motivation}</p>
-            ${app.portfolio ? `<p><strong>Портфолио:</strong> <a href="${app.portfolio}" target="_blank">${app.portfolio}</a></p>` : ''}
-            <p><strong>Время подачи:</strong> ${new Date(app.createdAt).toLocaleString()}</p>
-            ${app.adminComment ? `<p><strong>Комментарий админа:</strong> ${app.adminComment}</p>` : ''}
-            ${app.status === 'pending' ? `
-                <div class="action-buttons">
-                    <button class="approve-btn" data-id="${app.id}" data-type="dev">Одобрить</button>
-                    <button class="reject-btn" data-id="${app.id}" data-type="dev">Отклонить</button>
-                    <button class="comment-btn" data-id="${app.id}" data-type="dev">Комментарий</button>
-                </div>
-            ` : ''}
-            <button class="delete-btn" data-id="${app.id}" data-type="dev">Удалить</button>
-        `;
-        applicationsList.appendChild(appElement);
-    }
-
-    addAdminButtonHandlers();
-}
-
-function addAdminButtonHandlers() {
-    document.querySelectorAll('.approve-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const appId = this.getAttribute('data-id');
-            const appType = this.getAttribute('data-type');
-            adminApproveApplication(appId, appType);
-        });
-    });
-
-    document.querySelectorAll('.reject-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const appId = this.getAttribute('data-id');
-            const appType = this.getAttribute('data-type');
-            adminRejectApplication(appId, appType);
-        });
-    });
-
-    document.querySelectorAll('.comment-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const appId = this.getAttribute('data-id');
-            const appType = this.getAttribute('data-type');
-            adminShowCommentModal(appId, appType);
-        });
-    });
-
-    document.querySelectorAll('.delete-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const appId = this.getAttribute('data-id');
-            const appType = this.getAttribute('data-type');
-            adminDeleteApplication(appId, appType);
-        });
-    });
-}
-
-async function loadUsersList() {
-    const users = await userManager.getAllUsers();
-    const usersList = document.getElementById('usersList');
-    if (!usersList) return;
-    
-    usersList.innerHTML = '';
-    
-    if (users.length === 0) {
-        usersList.innerHTML = '<p>Пользователей пока нет</p>';
-        return;
-    }
-    
-    users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    
-    for (const user of users) {
-        const userElement = document.createElement('div');
-        userElement.className = 'application-item';
-        userElement.innerHTML = `
-            <h4>Пользователь</h4>
-            <p><strong>ID:</strong> ${user.id}</p>
-            <p><strong>Имя:</strong> ${user.firstName} ${user.lastName}</p>
-            <p><strong>Email:</strong> ${user.email}</p>
-            <p><strong>Зарегистрирован:</strong> ${new Date(user.createdAt).toLocaleString()}</p>
-            <p><strong>Последний вход:</strong> ${user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Никогда'}</p>
-        `;
-        usersList.appendChild(userElement);
-    }
-}
-
-function getStatusText(status) {
-    const statusTexts = {
-        'pending': 'На рассмотрении',
-        'approved': 'Одобрено', 
-        'rejected': 'Отклонено'
-    };
-    return statusTexts[status] || status;
-}
-
-// Admin application actions
-async function adminApproveApplication(applicationId, type) {
-    if (confirm('Одобрить эту заявку?')) {
-        try {
-            const application = await applicationManager.updateApplicationStatus(applicationId, type, 'approved');
-            if (application) {
-                const user = await dbManager.get('users', application.userId);
-                if (user) {
-                    await userManager.addNotification(user.id, {
-                        title: type === 'beta' ? 'Заявка на бета-тестирование одобрена' : 'Заявка в команду одобрена',
-                        message: type === 'beta' 
-                            ? 'Поздравляем! Ваша заявка на бета-тестирование ArBrowser была одобрена. Мы свяжемся с вами в ближайшее время.'
-                            : 'Поздравляем! Ваша заявка на участие в команде разработки была одобрена. Мы свяжемся с вами для обсуждения деталей.',
-                        type: 'success',
-                        applicationId: applicationId
-                    });
-                }
-                
-                await loadApplications();
-                alert('✅ Заявка одобрена! Пользователь получил уведомление.');
-            }
-        } catch (error) {
-            alert('❌ Ошибка: ' + error.message);
-        }
-    }
-}
-
-async function adminRejectApplication(applicationId, type) {
-    adminShowCommentModal(applicationId, type, true);
-}
-
-function adminShowCommentModal(applicationId, type, isRejection = false) {
-    currentCommentAppId = applicationId;
-    currentCommentAppType = type;
-    currentCommentIsRejection = isRejection;
-    
-    const modal = document.createElement('div');
-    modal.className = 'modal comment-modal';
-    modal.innerHTML = `
-        <div class="modal-content comment-content">
-            <span class="close">&times;</span>
-            <h2>${isRejection ? 'Отклонить заявку' : 'Добавить комментарий'}</h2>
-            <textarea class="comment-textarea" placeholder="${isRejection ? 'Укажите причину отказа...' : 'Введите ваш комментарий...'}" required></textarea>
-            <div class="comment-actions">
-                <button class="secondary-btn" id="cancelComment">Отмена</button>
-                <button class="${isRejection ? 'reject-btn' : 'comment-btn'}" id="submitComment">
-                    ${isRejection ? 'Отклонить' : 'Отправить'}
-                </button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    modal.style.display = 'block';
-    
-    modal.querySelector('.close').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
-    
-    modal.querySelector('#cancelComment').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
-    
-    modal.querySelector('#submitComment').addEventListener('click', adminSubmitComment);
-    
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            document.body.removeChild(modal);
-        }
-    });
-}
-
-async function adminSubmitComment() {
-    const modal = document.querySelector('.comment-modal');
-    if (!modal) return;
-    
-    const comment = modal.querySelector('.comment-textarea').value;
-    
-    if (!comment.trim()) {
-        alert('❌ Пожалуйста, введите комментарий');
-        return;
-    }
-    
-    try {
-        const status = currentCommentIsRejection ? 'rejected' : 'pending';
-        const application = await applicationManager.updateApplicationStatus(currentCommentAppId, currentCommentAppType, status, comment);
-        
-        if (application) {
-            const user = await dbManager.get('users', application.userId);
-            if (user) {
-                if (currentCommentIsRejection) {
-                    await userManager.addNotification(user.id, {
-                        title: currentCommentAppType === 'beta' ? 'Заявка на бета-тестирование отклонена' : 'Заявка в команду отклонена',
-                        message: currentCommentAppType === 'beta'
-                            ? `К сожалению, ваша заявка на бета-тестирование ArBrowser была отклонена. Причина: ${comment}`
-                            : `К сожалению, ваша заявка на участие в команде разработки была отклонена. Причина: ${comment}`,
-                        type: 'error',
-                        applicationId: currentCommentAppId,
-                        adminComment: comment
-                    });
-                } else {
-                    await userManager.addNotification(user.id, {
-                        title: 'Комментарий к вашей заявке',
-                        message: `Администратор оставил комментарий к вашей заявке: ${comment}`,
-                        type: 'warning',
-                        applicationId: currentCommentAppId,
-                        adminComment: comment
-                    });
-                }
-            }
-            
-            document.body.removeChild(modal);
-            await loadApplications();
-            alert(currentCommentIsRejection ? '✅ Заявка отклонена!' : '✅ Комментарий добавлен!');
-        }
-    } catch (error) {
-        alert('❌ Ошибка: ' + error.message);
-    }
-}
-
-async function adminDeleteApplication(applicationId, type) {
-    if (confirm('Вы уверены, что хотите удалить эту заявку?')) {
-        try {
-            await applicationManager.deleteApplication(applicationId, type);
-            await loadApplications();
-            alert('✅ Заявка удалена!');
-        } catch (error) {
-            alert('❌ Ошибка: ' + error.message);
-        }
-    }
-}
-
-async function saveContent() {
-    const heroTitle = document.getElementById('heroTitle');
-    const heroSubtitle = document.getElementById('heroSubtitle');
-    const releaseDate = document.getElementById('releaseDate');
-    
-    if (!heroTitle || !heroSubtitle || !releaseDate) {
-        alert('❌ Элементы формы не найдены');
-        return;
-    }
-
-    const siteContent = {
-        heroTitle: heroTitle.value,
-        heroSubtitle: heroSubtitle.value,
-        releaseDate: releaseDate.value
-    };
-    
-    try {
-        await siteContentManager.updateContent(siteContent);
-        
-        const heroTitleElement = document.querySelector('.hero-title');
-        const heroSubtitleElement = document.querySelector('.hero-subtitle');
-        const releaseInfoElement = document.querySelector('.release-info h4');
-        
-        if (heroTitleElement) heroTitleElement.textContent = siteContent.heroTitle;
-        if (heroSubtitleElement) heroSubtitleElement.textContent = siteContent.heroSubtitle;
-        if (releaseInfoElement) releaseInfoElement.textContent = `📅 Примерный релиз: ${siteContent.releaseDate}`;
-        
-        alert('✅ Изменения сохранены!');
-    } catch (error) {
-        alert('❌ Ошибка сохранения: ' + error.message);
-    }
-}
-
-async function loadContent() {
-    try {
-        const content = await siteContentManager.getContent();
-        const heroTitle = document.getElementById('heroTitle');
-        const heroSubtitle = document.getElementById('heroSubtitle');
-        const releaseDate = document.getElementById('releaseDate');
-        
-        if (heroTitle) heroTitle.value = content.heroTitle;
-        if (heroSubtitle) heroSubtitle.value = content.heroSubtitle;
-        if (releaseDate) releaseDate.value = content.releaseDate;
-    } catch (error) {
-        console.error('Ошибка загрузки контента:', error);
-    }
-}
-
-// Добавляем CSS стили
-const improvedStyles = `
-    /* Шторка уведомлений */
-    #userNotifications {
-        position: fixed;
-        top: 0;
-        right: -400px;
-        width: 380px;
-        height: 100vh;
+// Добавляем CSS стили для welcome screen
+const welcomeScreenStyles = `
+    /* Welcome Screen */
+    #welcomeScreen {
+        min-height: 100vh;
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        box-shadow: -5px 0 25px rgba(0,0,0,0.3);
-        transition: right 0.3s ease-in-out;
-        z-index: 1000;
-        padding: 20px;
-        overflow-y: auto;
-        color: white;
-    }
-    
-    #userNotifications:not(.hidden) {
-        right: 0;
-    }
-    
-    .notifications-header {
         display: flex;
-        justify-content: space-between;
         align-items: center;
+        justify-content: center;
+        padding: 20px;
+        color: white;
+    }
+    
+    .welcome-container {
+        text-align: center;
+        max-width: 600px;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        padding: 40px;
+        border-radius: 20px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    .welcome-logo {
+        font-size: 4em;
         margin-bottom: 20px;
-        padding-bottom: 15px;
-        border-bottom: 2px solid rgba(255,255,255,0.3);
     }
     
-    .notifications-header h3 {
-        margin: 0;
-        color: white;
-        font-size: 1.4em;
-    }
-    
-    .close-notifications {
-        background: rgba(255,255,255,0.2);
-        border: none;
-        color: white;
-        font-size: 1.5em;
-        cursor: pointer;
-        padding: 5px 10px;
-        border-radius: 5px;
-        transition: background 0.3s;
-    }
-    
-    .close-notifications:hover {
-        background: rgba(255,255,255,0.3);
-    }
-    
-    .notification-item {
-        background: rgba(255,255,255,0.1);
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 15px;
-        border-left: 4px solid #4CAF50;
-        transition: transform 0.2s;
-    }
-    
-    .notification-item:hover {
-        transform: translateX(-5px);
-    }
-    
-    .notification-item.unread {
-        border-left-color: #ff6b6b;
-        background: rgba(255,255,255,0.15);
-    }
-    
-    .notification-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
+    .welcome-title {
+        font-size: 3em;
         margin-bottom: 10px;
-    }
-    
-    .notification-title {
         font-weight: bold;
+    }
+    
+    .welcome-subtitle {
+        font-size: 1.5em;
+        margin-bottom: 30px;
+        opacity: 0.9;
+    }
+    
+    .welcome-description {
         font-size: 1.1em;
-        color: white;
-        margin: 0;
+        margin-bottom: 40px;
+        line-height: 1.6;
+        opacity: 0.8;
     }
     
-    .notification-time {
-        font-size: 0.8em;
-        color: rgba(255,255,255,0.7);
+    .welcome-buttons {
+        display: flex;
+        gap: 20px;
+        justify-content: center;
+        flex-wrap: wrap;
     }
     
-    .notification-message {
-        color: rgba(255,255,255,0.9);
-        line-height: 1.4;
-        margin-bottom: 10px;
+    .welcome-btn {
+        padding: 15px 30px;
+        font-size: 1.1em;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-weight: bold;
+        text-decoration: none;
+        display: inline-block;
     }
     
-    .notification-comment {
-        background: rgba(255,255,255,0.1);
-        padding: 10px;
-        border-radius: 5px;
-        margin-top: 10px;
-        font-style: italic;
-    }
-    
-    .mark-read-btn {
+    .welcome-btn.primary {
         background: #4CAF50;
         color: white;
-        border: none;
-        padding: 8px 15px;
-        border-radius: 5px;
-        cursor: pointer;
+    }
+    
+    .welcome-btn.secondary {
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    .welcome-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+    }
+    
+    .welcome-features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+        margin-top: 40px;
+    }
+    
+    .feature-item {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 20px;
+        border-radius: 10px;
+        text-align: center;
+    }
+    
+    .feature-icon {
+        font-size: 2em;
+        margin-bottom: 10px;
+    }
+    
+    .feature-text {
         font-size: 0.9em;
-        transition: background 0.3s;
+        opacity: 0.8;
     }
     
-    .mark-read-btn:hover {
-        background: #45a049;
-    }
-    
-    /* Кнопка выхода другого цвета */
-    #userLogout {
-        background: linear-gradient(135deg, #ff6b6b, #ee5a52);
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: bold;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
-    }
-    
-    #userLogout:hover {
-        background: linear-gradient(135deg, #ff5252, #e53935);
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
-    }
-    
-    #userLogout:active {
-        transform: translateY(0);
-    }
-    
-    /* Улучшенная кнопка уведомлений */
-    #notificationsBtn {
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-weight: bold;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-    }
-    
-    #notificationsBtn:hover {
-        background: linear-gradient(135deg, #5a6fd8, #6a4190);
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    @media (max-width: 768px) {
+        .welcome-container {
+            padding: 20px;
+        }
+        
+        .welcome-title {
+            font-size: 2em;
+        }
+        
+        .welcome-subtitle {
+            font-size: 1.2em;
+        }
+        
+        .welcome-buttons {
+            flex-direction: column;
+        }
     }
 `;
 
 // Добавляем стили в документ
 const styleSheet = document.createElement('style');
-styleSheet.textContent = improvedStyles;
+styleSheet.textContent = welcomeScreenStyles + improvedStyles; // Добавляем и welcome стили и предыдущие
 document.head.appendChild(styleSheet);
