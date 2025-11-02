@@ -94,17 +94,335 @@ class DatabaseManager {
 
 const dbManager = new DatabaseManager();
 
-// Telegram Bot Manager
+// Telegram Bot Manager с интерактивными кнопками
 class TelegramBotManager {
     constructor() {
-        // ЗАМЕНИТЕ НА ВАШИ ДАННЫЕ!
-        this.botToken = '7546982692:AAH8qW1k9P8Wm8bB3W7p3p3p3p3p3p3p3p3p'; // Ваш токен бота
-        this.chatId = '7045075942'; // Ваш chat_id
+        this.botToken = '8207900561:AAGo9TRPQVu8_iBiVXiRFt2K2dsBOg0IdDk';
+        this.chatId = null;
+        this.pendingActions = new Map();
+        this.initializeChatId();
+        this.setupWebhookListener();
     }
 
-    async sendMessage(message) {
+    async initializeChatId() {
+        const savedChatId = localStorage.getItem('telegramChatId');
+        if (savedChatId) {
+            this.chatId = savedChatId;
+            console.log('✅ Chat ID loaded from storage:', this.chatId);
+        } else {
+            await this.findChatIdAutomatically();
+        }
+    }
+
+    async findChatIdAutomatically() {
         try {
-            // Для обхода CORS используем proxy или напрямую если сервер позволяет
+            const url = `https://api.telegram.org/bot${this.botToken}/getUpdates`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.ok && data.result.length > 0) {
+                const chatId = data.result[data.result.length - 1].message.chat.id;
+                this.setChatId(chatId);
+                console.log('✅ Chat ID найден автоматически:', chatId);
+                this.showAutoConfigSuccess(chatId);
+                return chatId;
+            } else {
+                console.log('📝 Напишите любое сообщение вашему боту в Telegram');
+                this.createChatIdHelper();
+                return null;
+            }
+        } catch (error) {
+            console.error('❌ Ошибка поиска Chat ID:', error);
+            this.createChatIdHelper();
+            return null;
+        }
+    }
+
+    setupWebhookListener() {
+        setInterval(() => {
+            this.checkForUpdates();
+        }, 3000);
+    }
+
+    async checkForUpdates() {
+        if (!this.chatId) return;
+
+        try {
+            const url = `https://api.telegram.org/bot${this.botToken}/getUpdates`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.ok && data.result.length > 0) {
+                for (const update of data.result) {
+                    if (update.message && update.message.text) {
+                        await this.handleMessage(update.message);
+                    } else if (update.callback_query) {
+                        await this.handleCallbackQuery(update.callback_query);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('❌ Ошибка проверки обновлений:', error);
+        }
+    }
+
+    async handleMessage(message) {
+        const text = message.text;
+        const chatId = message.chat.id;
+
+        const pendingAction = this.pendingActions.get(chatId);
+        if (pendingAction && pendingAction.waitingForComment) {
+            await this.handleCommentResponse(chatId, text, pendingAction);
+            return;
+        }
+
+        if (text === '/start') {
+            await this.sendWelcomeMessage(chatId);
+        } else if (text === '/applications') {
+            await this.sendApplicationsList(chatId);
+        } else if (text === '/help') {
+            await this.sendHelpMessage(chatId);
+        }
+    }
+
+    async handleCallbackQuery(callbackQuery) {
+        const data = callbackQuery.data;
+        const chatId = callbackQuery.message.chat.id;
+        const messageId = callbackQuery.message.message_id;
+
+        console.log('📨 Callback received:', data);
+
+        const [action, appId, appType] = data.split(':');
+
+        try {
+            switch (action) {
+                case 'approve':
+                    await this.approveApplication(chatId, messageId, parseInt(appId), appType);
+                    break;
+                case 'reject':
+                    await this.requestRejectionReason(chatId, messageId, parseInt(appId), appType);
+                    break;
+                case 'comment':
+                    await this.requestComment(chatId, messageId, parseInt(appId), appType);
+                    break;
+                case 'view_details':
+                    await this.sendApplicationDetails(chatId, parseInt(appId), appType);
+                    break;
+            }
+        } catch (error) {
+            console.error('❌ Ошибка обработки callback:', error);
+            await this.sendMessage(chatId, '❌ Произошла ошибка при обработке запроса');
+        }
+    }
+
+    async handleCommentResponse(chatId, text, pendingAction) {
+        const { appId, appType, action, originalMessageId } = pendingAction;
+        
+        try {
+            if (action === 'reject') {
+                await applicationManager.updateApplicationStatus(appId, appType, 'rejected', text);
+                await this.sendMessage(chatId, `✅ Заявка #${appId} отклонена с комментарием: "${text}"`);
+                await this.editApplicationMessage(chatId, originalMessageId, appId, appType, 'rejected', text);
+            } else if (action === 'comment') {
+                await applicationManager.updateApplicationStatus(appId, appType, 'pending', text);
+                await this.sendMessage(chatId, `✅ Комментарий добавлен к заявке #${appId}: "${text}"`);
+                await this.editApplicationMessage(chatId, originalMessageId, appId, appType, 'pending', text);
+            }
+
+            this.pendingActions.delete(chatId);
+        } catch (error) {
+            console.error('❌ Ошибка обработки комментария:', error);
+            await this.sendMessage(chatId, '❌ Ошибка при обработке комментария');
+        }
+    }
+
+    async sendWelcomeMessage(chatId) {
+        const message = `
+🤖 <b>ArBrowser Admin Bot</b>
+
+Добро пожаловать в панель управления заявками!
+
+<b>Доступные команды:</b>
+/applications - Список заявок
+/help - Помощь
+
+<b>Бот автоматически уведомляет о:</b>
+• Новых заявках на бета-тестирование
+• Новых заявках в команду разработки
+• Изменениях статусов заявок
+        `.trim();
+
+        await this.sendMessage(chatId, message);
+    }
+
+    async sendHelpMessage(chatId) {
+        const message = `
+📋 <b>Помощь по боту</b>
+
+<b>Как работать с заявками:</b>
+1. Новые заявки приходят автоматически
+2. Используйте кнопки под каждой заявкой:
+   • ✅ Одобрить - принять заявку
+   • ❌ Отклонить - отклонить с указанием причины
+   • 💬 Комментарий - оставить комментарий
+   • 👁️ Детали - посмотреть полную информацию
+
+3. При отклонении бот запросит причину
+4. Все действия синхронизируются с сайтом
+
+<b>Команды:</b>
+/start - Начало работы
+/applications - Список всех заявок
+/help - Эта справка
+        `.trim();
+
+        await this.sendMessage(chatId, message);
+    }
+
+    async sendApplicationsList(chatId) {
+        try {
+            const betaApps = await applicationManager.getBetaApplications();
+            const devApps = await applicationManager.getDevApplications();
+            
+            const pendingBetaApps = betaApps.filter(app => app.status === 'pending');
+            const pendingDevApps = devApps.filter(app => app.status === 'pending');
+
+            if (pendingBetaApps.length === 0 && pendingDevApps.length === 0) {
+                await this.sendMessage(chatId, '📭 Нет заявок, ожидающих рассмотрения');
+                return;
+            }
+
+            let message = '📋 <b>Заявки ожидающие рассмотрения</b>\n\n';
+
+            if (pendingBetaApps.length > 0) {
+                message += `<b>Бета-тестирование (${pendingBetaApps.length}):</b>\n`;
+                for (const app of pendingBetaApps.slice(0, 5)) {
+                    message += `• #${app.id} - ${app.firstName} ${app.lastName}\n`;
+                }
+                message += '\n';
+            }
+
+            if (pendingDevApps.length > 0) {
+                message += `<b>Команда разработки (${pendingDevApps.length}):</b>\n`;
+                for (const app of pendingDevApps.slice(0, 5)) {
+                    message += `• #${app.id} - ${app.firstName} ${app.lastName} (${app.role})\n`;
+                }
+            }
+
+            if (pendingBetaApps.length > 5 || pendingDevApps.length > 5) {
+                message += `\n<i>Показаны первые 5 заявок из каждой категории</i>`;
+            }
+
+            await this.sendMessage(chatId, message);
+
+            const allPendingApps = [...pendingBetaApps, ...pendingDevApps]
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                .slice(0, 3);
+
+            for (const app of allPendingApps) {
+                const type = app.role ? 'dev' : 'beta';
+                await this.sendApplicationNotification(app, type, true);
+            }
+
+        } catch (error) {
+            console.error('❌ Ошибка получения списка заявок:', error);
+            await this.sendMessage(chatId, '❌ Ошибка при получении списка заявок');
+        }
+    }
+
+    async sendApplicationDetails(chatId, appId, appType) {
+        try {
+            const storeName = appType === 'beta' ? 'betaApplications' : 'devApplications';
+            const application = await dbManager.get(storeName, appId);
+            
+            if (!application) {
+                await this.sendMessage(chatId, '❌ Заявка не найдена');
+                return;
+            }
+
+            const user = await dbManager.get('users', application.userId);
+            const roleNames = {
+                'frontend': 'Frontend разработчик',
+                'backend': 'Backend разработчик', 
+                'fullstack': 'Fullstack разработчик',
+                'designer': 'UI/UX дизайнер',
+                'qa': 'QA инженер',
+                'devops': 'DevOps инженер',
+                'marketing': 'Маркетолог',
+                'other': 'Другое'
+            };
+
+            let message = `
+📄 <b>Детали заявки #${application.id}</b>
+
+👤 <b>Имя:</b> ${application.firstName} ${application.lastName}
+📧 <b>Email:</b> ${application.email}
+🆔 <b>ID пользователя:</b> ${application.userId}
+📝 <b>Тип:</b> ${appType === 'beta' ? 'Бета-тестирование' : 'Команда разработки'}
+⏰ <b>Подана:</b> ${new Date(application.createdAt).toLocaleString('ru-RU')}
+🔰 <b>Статус:</b> ${this.getStatusText(application.status)}
+            `.trim();
+
+            if (appType === 'dev') {
+                message += `\n💼 <b>Роль:</b> ${roleNames[application.role] || application.role}`;
+                message += `\n📊 <b>Опыт:</b> ${application.experience} лет`;
+                message += `\n🛠️ <b>Навыки:</b> ${application.skills}`;
+                message += `\n🎯 <b>Мотивация:</b> ${application.motivation}`;
+                if (application.portfolio) {
+                    message += `\n🔗 <b>Портфолио:</b> ${application.portfolio}`;
+                }
+            } else {
+                message += `\n📝 <b>Причина:</b> ${application.reason}`;
+            }
+
+            if (application.adminComment) {
+                message += `\n💬 <b>Комментарий админа:</b> ${application.adminComment}`;
+            }
+
+            await this.sendMessage(chatId, message);
+
+        } catch (error) {
+            console.error('❌ Ошибка получения деталей заявки:', error);
+            await this.sendMessage(chatId, '❌ Ошибка при получении деталей заявки');
+        }
+    }
+
+    async sendApplicationNotification(application, type, isFromList = false) {
+        const appType = type === 'beta' ? 'бета-тестирование' : 'команду разработки';
+        
+        const message = `
+${isFromList ? '📋' : '🆕'} <b>${isFromList ? 'ЗАЯВКА ИЗ СПИСКА' : 'НОВАЯ ЗАЯВКА НА ' + appType.toUpperCase()}</b>
+
+👤 <b>Имя:</b> ${this.sanitizeHTML(application.firstName)} ${this.sanitizeHTML(application.lastName)}
+📧 <b>Email:</b> ${this.sanitizeHTML(application.email)}
+🆔 <b>ID заявки:</b> ${application.id}
+⏰ <b>Время:</b> ${new Date(application.createdAt).toLocaleString('ru-RU')}
+
+${type === 'dev' ? 
+`💼 <b>Роль:</b> ${this.sanitizeHTML(application.role)}` : 
+`📝 <b>Причина:</b> ${this.sanitizeHTML(application.reason.substring(0, 100))}...`}
+
+<b>Статус:</b> ⏳ Ожидает рассмотрения
+        `.trim();
+
+        const keyboard = {
+            inline_keyboard: [
+                [
+                    { text: '✅ Одобрить', callback_data: `approve:${application.id}:${type}` },
+                    { text: '❌ Отклонить', callback_data: `reject:${application.id}:${type}` }
+                ],
+                [
+                    { text: '💬 Комментарий', callback_data: `comment:${application.id}:${type}` },
+                    { text: '👁️ Детали', callback_data: `view_details:${application.id}:${type}` }
+                ]
+            ]
+        };
+
+        return await this.sendMessageWithKeyboard(this.chatId, message, keyboard);
+    }
+
+    async sendMessageWithKeyboard(chatId, message, keyboard) {
+        try {
             const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
             
             const response = await fetch(url, {
@@ -113,7 +431,278 @@ class TelegramBotManager {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    chat_id: this.chatId,
+                    chat_id: chatId,
+                    text: message,
+                    parse_mode: 'HTML',
+                    reply_markup: keyboard
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log('✅ Telegram message with keyboard sent:', result);
+            return result;
+        } catch (error) {
+            console.error('❌ Error sending Telegram message with keyboard:', error);
+            return null;
+        }
+    }
+
+    async editApplicationMessage(chatId, messageId, appId, appType, status, comment = '') {
+        try {
+            const storeName = appType === 'beta' ? 'betaApplications' : 'devApplications';
+            const application = await dbManager.get(storeName, appId);
+            
+            if (!application) return;
+
+            const statusEmoji = status === 'approved' ? '✅' : '❌';
+            const statusText = status === 'approved' ? 'ОДОБРЕНА' : 'ОТКЛОНЕНА';
+            
+            const message = `
+${statusEmoji} <b>ЗАЯВКА ОБРАБОТАНА</b>
+
+👤 <b>Имя:</b> ${this.sanitizeHTML(application.firstName)} ${this.sanitizeHTML(application.lastName)}
+📧 <b>Email:</b> ${this.sanitizeHTML(application.email)}
+🆔 <b>ID заявки:</b> ${application.id}
+🔰 <b>Статус:</b> ${statusText}
+${comment ? `💬 <b>Комментарий:</b> ${this.sanitizeHTML(comment)}` : ''}
+⏰ <b>Обработана:</b> ${new Date().toLocaleString('ru-RU')}
+            `.trim();
+
+            const url = `https://api.telegram.org/bot${this.botToken}/editMessageText`;
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    message_id: messageId,
+                    text: message,
+                    parse_mode: 'HTML'
+                })
+            });
+            
+            return response.ok;
+        } catch (error) {
+            console.error('❌ Error editing message:', error);
+            return false;
+        }
+    }
+
+    async approveApplication(chatId, messageId, appId, appType) {
+        try {
+            const application = await applicationManager.updateApplicationStatus(appId, appType, 'approved');
+            
+            if (application) {
+                const user = await dbManager.get('users', application.userId);
+                if (user) {
+                    await userManager.addNotification(user.id, {
+                        title: appType === 'beta' ? 'Заявка на бета-тестирование одобрена' : 'Заявка в команду одобрена',
+                        message: appType === 'beta' 
+                            ? 'Поздравляем! Ваша заявка на бета-тестирование ArBrowser была одобрена. Мы свяжемся с вами в ближайшее время.'
+                            : 'Поздравляем! Ваша заявка на участие в команде разработки была одобрена. Мы свяжемся с вами для обсуждения деталей.',
+                        type: 'success',
+                        applicationId: appId
+                    });
+                }
+
+                await this.editApplicationMessage(chatId, messageId, appId, appType, 'approved');
+                await this.sendMessage(chatId, `✅ Заявка #${appId} успешно одобрена!`);
+            }
+        } catch (error) {
+            console.error('❌ Ошибка одобрения заявки:', error);
+            await this.sendMessage(chatId, '❌ Ошибка при одобрении заявки');
+        }
+    }
+
+    async requestRejectionReason(chatId, messageId, appId, appType) {
+        this.pendingActions.set(chatId, {
+            waitingForComment: true,
+            appId: appId,
+            appType: appType,
+            action: 'reject',
+            originalMessageId: messageId
+        });
+
+        await this.sendMessage(chatId, '📝 Укажите причину отклонения заявки:');
+    }
+
+    async requestComment(chatId, messageId, appId, appType) {
+        this.pendingActions.set(chatId, {
+            waitingForComment: true,
+            appId: appId,
+            appType: appType,
+            action: 'comment',
+            originalMessageId: messageId
+        });
+
+        await this.sendMessage(chatId, '💬 Введите комментарий к заявке:');
+    }
+
+    async sendNewApplicationNotification(application, type) {
+        return await this.sendApplicationNotification(application, type, false);
+    }
+
+    async sendApplicationStatusUpdate(application, type, status, adminComment = '') {
+        const appType = type === 'beta' ? 'бета-тестирование' : 'команду разработки';
+        const statusText = status === 'approved' ? '✅ ОДОБРЕНА' : '❌ ОТКЛОНЕНА';
+        const statusEmoji = status === 'approved' ? '✅' : '❌';
+        
+        const message = `
+🔄 <b>СТАТУС ЗАЯВКИ ИЗМЕНЕН</b>
+
+${statusEmoji} <b>Статус:</b> ${statusText}
+👤 <b>Имя:</b> ${this.sanitizeHTML(application.firstName)} ${this.sanitizeHTML(application.lastName)}
+📧 <b>Email:</b> ${this.sanitizeHTML(application.email)}
+🆔 <b>ID заявки:</b> ${application.id}
+📝 <b>Тип:</b> ${appType}
+${adminComment ? `💬 <b>Комментарий:</b> ${this.sanitizeHTML(adminComment)}` : ''}
+⏰ <b>Время обработки:</b> ${new Date().toLocaleString('ru-RU')}
+        `.trim();
+
+        return await this.sendMessage(this.chatId, message);
+    }
+
+    getStatusText(status) {
+        const statusTexts = {
+            'pending': '⏳ Ожидает рассмотрения',
+            'approved': '✅ Одобрено', 
+            'rejected': '❌ Отклонено'
+        };
+        return statusTexts[status] || status;
+    }
+
+    showAutoConfigSuccess(chatId) {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #4CAF50;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            z-index: 10000;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        `;
+        notification.innerHTML = `
+            ✅ <strong>Telegram бот настроен!</strong><br>
+            Chat ID: ${chatId}
+        `;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.remove();
+        }, 5000);
+    }
+
+    createChatIdHelper() {
+        const helperBtn = document.createElement('button');
+        helperBtn.innerHTML = '🔧 Получить Chat ID';
+        helperBtn.style.position = 'fixed';
+        helperBtn.style.bottom = '10px';
+        helperBtn.style.right = '10px';
+        helperBtn.style.zIndex = '10000';
+        helperBtn.style.padding = '10px';
+        helperBtn.style.background = '#ff6b6b';
+        helperBtn.style.color = 'white';
+        helperBtn.style.border = 'none';
+        helperBtn.style.borderRadius = '5px';
+        helperBtn.style.cursor = 'pointer';
+        
+        helperBtn.addEventListener('click', () => {
+            this.showChatIdInstructions();
+        });
+        
+        document.body.appendChild(helperBtn);
+    }
+
+    showChatIdInstructions() {
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10001;
+        `;
+        
+        modal.innerHTML = `
+            <div style="background: white; padding: 20px; border-radius: 10px; max-width: 500px; text-align: center;">
+                <h3>📋 Как получить Chat ID</h3>
+                <ol style="text-align: left; margin: 20px 0;">
+                    <li>Найдите бота <strong>@getidsbot</strong> в Telegram</li>
+                    <li>Начните диалог с ботом командой <code>/start</code></li>
+                    <li>Бот покажет ваш Chat ID</li>
+                    <li>Введите его ниже:</li>
+                </ol>
+                <input type="text" id="chatIdInput" placeholder="Ваш Chat ID" style="padding: 10px; width: 80%; margin: 10px 0;">
+                <br>
+                <button id="saveChatId" style="padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 5px; margin: 5px;">Сохранить</button>
+                <button id="testBot" style="padding: 10px 20px; background: #2196F3; color: white; border: none; border-radius: 5px; margin: 5px;">Тест бота</button>
+                <button id="closeModal" style="padding: 10px 20px; background: #f44336; color: white; border: none; border-radius: 5px; margin: 5px;">Закрыть</button>
+                <div id="testResult" style="margin: 10px 0;"></div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        modal.querySelector('#saveChatId').addEventListener('click', () => {
+            const chatId = modal.querySelector('#chatIdInput').value.trim();
+            if (chatId) {
+                this.setChatId(chatId);
+                modal.remove();
+                alert('✅ Chat ID сохранен!');
+            } else {
+                alert('❌ Введите Chat ID');
+            }
+        });
+        
+        modal.querySelector('#testBot').addEventListener('click', async () => {
+            const testResult = modal.querySelector('#testResult');
+            testResult.innerHTML = '🔄 Тестируем бота...';
+            
+            const success = await this.sendTestMessage();
+            if (success) {
+                testResult.innerHTML = '✅ Бот работает! Сообщение отправлено.';
+            } else {
+                testResult.innerHTML = '❌ Ошибка отправки. Проверьте токен бота и Chat ID.';
+            }
+        });
+        
+        modal.querySelector('#closeModal').addEventListener('click', () => {
+            modal.remove();
+        });
+    }
+
+    setChatId(chatId) {
+        this.chatId = chatId;
+        localStorage.setItem('telegramChatId', chatId);
+        console.log('✅ Chat ID saved:', chatId);
+    }
+
+    async sendMessage(chatId, message) {
+        try {
+            const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    chat_id: chatId,
                     text: message,
                     parse_mode: 'HTML'
                 })
@@ -128,51 +717,33 @@ class TelegramBotManager {
             return result.ok;
         } catch (error) {
             console.error('❌ Error sending Telegram message:', error);
-            // Не прерываем выполнение при ошибке Telegram
             return false;
         }
     }
 
-    async sendNewApplicationNotification(application, type) {
-        const appType = type === 'beta' ? 'бета-тестирование' : 'команду разработки';
-        const message = `
-🆕 <b>НОВАЯ ЗАЯВКА НА ${appType.toUpperCase()}</b>
+    async sendTestMessage() {
+        if (!this.chatId) {
+            console.warn('⚠️ Chat ID не установлен');
+            return false;
+        }
 
-👤 <b>Имя:</b> ${application.firstName} ${application.lastName}
-📧 <b>Email:</b> ${application.email}
-🆔 <b>ID заявки:</b> ${application.id}
-⏰ <b>Время:</b> ${new Date(application.createdAt).toLocaleString('ru-RU')}
+        const testMessage = `
+🤖 <b>ТЕСТОВОЕ СООБЩЕНИЕ</b>
 
-${type === 'dev' ? 
-`💼 <b>Роль:</b> ${application.role}
-📊 <b>Опыт:</b> ${application.experience} лет
-🛠️ <b>Навыки:</b> ${application.skills.substring(0, 50)}...` : 
-`📝 <b>Причина:</b> ${application.reason.substring(0, 100)}...`}
+✅ Ваш бот работает корректно!
+🕒 Время: ${new Date().toLocaleString('ru-RU')}
+📱 Система: ${navigator.userAgent}
 
-<b>Статус:</b> ⏳ Ожидает рассмотрения
+<b>ArBrowser Notification System</b>
         `.trim();
 
-        return await this.sendMessage(message);
+        return await this.sendMessage(testMessage);
     }
 
-    async sendApplicationStatusUpdate(application, type, status, adminComment = '') {
-        const appType = type === 'beta' ? 'бета-тестирование' : 'команду разработки';
-        const statusText = status === 'approved' ? '✅ ОДОБРЕНА' : '❌ ОТКЛОНЕНА';
-        const statusEmoji = status === 'approved' ? '✅' : '❌';
-        
-        const message = `
-🔄 <b>СТАТУС ЗАЯВКИ ИЗМЕНЕН</b>
-
-${statusEmoji} <b>Статус:</b> ${statusText}
-👤 <b>Имя:</b> ${application.firstName} ${application.lastName}
-📧 <b>Email:</b> ${application.email}
-🆔 <b>ID заявки:</b> ${application.id}
-📝 <b>Тип:</b> ${appType}
-${adminComment ? `💬 <b>Комментарий:</b> ${adminComment}` : ''}
-⏰ <b>Время обработки:</b> ${new Date().toLocaleString('ru-RU')}
-        `.trim();
-
-        return await this.sendMessage(message);
+    sanitizeHTML(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 
@@ -213,6 +784,18 @@ class UserManager {
     }
 
     async register(email, firstName, lastName, password) {
+        if (!this.isValidEmail(email)) {
+            throw new Error('Некорректный формат email');
+        }
+        
+        if (password.length < 6) {
+            throw new Error('Пароль должен содержать минимум 6 символов');
+        }
+
+        if (!firstName.trim() || !lastName.trim()) {
+            throw new Error('Имя и фамилия обязательны для заполнения');
+        }
+
         const existingUsers = await dbManager.getAll('users', 'email', email.toLowerCase().trim());
         if (existingUsers.length > 0) {
             throw new Error('Пользователь с таким email уже существует');
@@ -325,11 +908,16 @@ class UserManager {
     async getAllUsers() {
         return await dbManager.getAll('users');
     }
+
+    isValidEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
 }
 
 const userManager = new UserManager();
 
-// Application Manager с Telegram уведомлениями
+// Application Manager
 class ApplicationManager {
     async submitBetaApplication(data, userId) {
         const userApplications = await dbManager.getAll('betaApplications', 'userId', userId);
@@ -362,7 +950,6 @@ class ApplicationManager {
         const applicationId = await dbManager.add('betaApplications', application);
         application.id = applicationId;
 
-        // Отправляем уведомление в Telegram
         console.log('📨 Отправка уведомления в Telegram...');
         await telegramBot.sendNewApplicationNotification(application, 'beta');
 
@@ -404,7 +991,6 @@ class ApplicationManager {
         const applicationId = await dbManager.add('devApplications', application);
         application.id = applicationId;
 
-        // Отправляем уведомление в Telegram
         console.log('📨 Отправка уведомления в Telegram...');
         await telegramBot.sendNewApplicationNotification(application, 'dev');
 
@@ -427,7 +1013,6 @@ class ApplicationManager {
             application.processedAt = new Date().toISOString();
             await dbManager.update(storeName, application);
 
-            // Отправляем уведомление в Telegram об изменении статуса
             console.log('📨 Отправка уведомления о смене статуса в Telegram...');
             await telegramBot.sendApplicationStatusUpdate(application, type, status, adminComment);
 
@@ -844,6 +1429,10 @@ function toggleNotifications() {
     const notificationsPanel = document.getElementById('userNotifications');
     if (notificationsPanel) {
         notificationsPanel.classList.toggle('hidden');
+        // Обновляем список уведомлений при открытии
+        if (!notificationsPanel.classList.contains('hidden')) {
+            loadUserNotifications();
+        }
     }
 }
 
@@ -852,6 +1441,49 @@ function closeNotifications() {
     if (notificationsPanel) {
         notificationsPanel.classList.add('hidden');
     }
+}
+
+async function loadUserNotifications() {
+    const user = userManager.getCurrentUser();
+    if (!user) return;
+
+    const notificationsList = document.getElementById('notificationsList');
+    if (!notificationsList) return;
+
+    const notifications = await userManager.getNotifications(user.id);
+    notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    notificationsList.innerHTML = '';
+
+    if (notifications.length === 0) {
+        notificationsList.innerHTML = '<div class="notification-item">Нет уведомлений</div>';
+        return;
+    }
+
+    for (const notification of notifications) {
+        const notificationElement = document.createElement('div');
+        notificationElement.className = `notification-item ${notification.read ? 'read' : 'unread'}`;
+        notificationElement.innerHTML = `
+            <div class="notification-header">
+                <strong class="notification-title">${notification.title}</strong>
+                <span class="notification-time">${new Date(notification.createdAt).toLocaleString()}</span>
+            </div>
+            <div class="notification-message">${notification.message}</div>
+            ${notification.adminComment ? `<div class="notification-comment"><strong>Комментарий:</strong> ${notification.adminComment}</div>` : ''}
+            ${!notification.read ? `<button class="mark-read-btn" data-id="${notification.id}">Отметить прочитанным</button>` : ''}
+        `;
+        notificationsList.appendChild(notificationElement);
+    }
+
+    // Добавляем обработчики для кнопок "Отметить прочитанным"
+    document.querySelectorAll('.mark-read-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const notificationId = parseInt(this.getAttribute('data-id'));
+            await userManager.markNotificationAsRead(notificationId);
+            await loadUserNotifications();
+            await showUserMenu(userManager.getCurrentUser());
+        });
+    });
 }
 
 // Application functions
@@ -1042,7 +1674,6 @@ async function loadBetaApplications() {
         applicationsList.appendChild(appElement);
     }
 
-    // Добавляем обработчики для кнопок
     addAdminButtonHandlers();
 }
 
@@ -1100,13 +1731,10 @@ async function loadDevApplications() {
         applicationsList.appendChild(appElement);
     }
 
-    // Добавляем обработчики для кнопок
     addAdminButtonHandlers();
 }
 
-// Функция для добавления обработчиков кнопок админ-панели
 function addAdminButtonHandlers() {
-    // Обработчики для кнопок одобрения
     document.querySelectorAll('.approve-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             const appId = this.getAttribute('data-id');
@@ -1115,7 +1743,6 @@ function addAdminButtonHandlers() {
         });
     });
 
-    // Обработчики для кнопок отклонения
     document.querySelectorAll('.reject-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             const appId = this.getAttribute('data-id');
@@ -1124,7 +1751,6 @@ function addAdminButtonHandlers() {
         });
     });
 
-    // Обработчики для кнопок комментариев
     document.querySelectorAll('.comment-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             const appId = this.getAttribute('data-id');
@@ -1133,7 +1759,6 @@ function addAdminButtonHandlers() {
         });
     });
 
-    // Обработчики для кнопок удаления
     document.querySelectorAll('.delete-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             const appId = this.getAttribute('data-id');
@@ -1236,7 +1861,6 @@ function adminShowCommentModal(applicationId, type, isRejection = false) {
     document.body.appendChild(modal);
     modal.style.display = 'block';
     
-    // Обработчики для модального окна
     modal.querySelector('.close').addEventListener('click', () => {
         document.body.removeChild(modal);
     });
@@ -1361,3 +1985,169 @@ async function loadContent() {
         console.error('Ошибка загрузки контента:', error);
     }
 }
+
+// Добавляем CSS для улучшенной шторки уведомлений и кнопки выхода
+const improvedStyles = `
+    /* Шторка уведомлений */
+    #userNotifications {
+        position: fixed;
+        top: 0;
+        right: -400px;
+        width: 380px;
+        height: 100vh;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        box-shadow: -5px 0 25px rgba(0,0,0,0.3);
+        transition: right 0.3s ease-in-out;
+        z-index: 1000;
+        padding: 20px;
+        overflow-y: auto;
+        color: white;
+    }
+    
+    #userNotifications:not(.hidden) {
+        right: 0;
+    }
+    
+    .notifications-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid rgba(255,255,255,0.3);
+    }
+    
+    .notifications-header h3 {
+        margin: 0;
+        color: white;
+        font-size: 1.4em;
+    }
+    
+    .close-notifications {
+        background: rgba(255,255,255,0.2);
+        border: none;
+        color: white;
+        font-size: 1.5em;
+        cursor: pointer;
+        padding: 5px 10px;
+        border-radius: 5px;
+        transition: background 0.3s;
+    }
+    
+    .close-notifications:hover {
+        background: rgba(255,255,255,0.3);
+    }
+    
+    .notification-item {
+        background: rgba(255,255,255,0.1);
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 15px;
+        border-left: 4px solid #4CAF50;
+        transition: transform 0.2s;
+    }
+    
+    .notification-item:hover {
+        transform: translateX(-5px);
+    }
+    
+    .notification-item.unread {
+        border-left-color: #ff6b6b;
+        background: rgba(255,255,255,0.15);
+    }
+    
+    .notification-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 10px;
+    }
+    
+    .notification-title {
+        font-weight: bold;
+        font-size: 1.1em;
+        color: white;
+        margin: 0;
+    }
+    
+    .notification-time {
+        font-size: 0.8em;
+        color: rgba(255,255,255,0.7);
+    }
+    
+    .notification-message {
+        color: rgba(255,255,255,0.9);
+        line-height: 1.4;
+        margin-bottom: 10px;
+    }
+    
+    .notification-comment {
+        background: rgba(255,255,255,0.1);
+        padding: 10px;
+        border-radius: 5px;
+        margin-top: 10px;
+        font-style: italic;
+    }
+    
+    .mark-read-btn {
+        background: #4CAF50;
+        color: white;
+        border: none;
+        padding: 8px 15px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 0.9em;
+        transition: background 0.3s;
+    }
+    
+    .mark-read-btn:hover {
+        background: #45a049;
+    }
+    
+    /* Кнопка выхода другого цвета */
+    #userLogout {
+        background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+    }
+    
+    #userLogout:hover {
+        background: linear-gradient(135deg, #ff5252, #e53935);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+    }
+    
+    #userLogout:active {
+        transform: translateY(0);
+    }
+    
+    /* Улучшенная кнопка уведомлений */
+    #notificationsBtn {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    #notificationsBtn:hover {
+        background: linear-gradient(135deg, #5a6fd8, #6a4190);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    }
+`;
+
+// Добавляем стили в документ
+const styleSheet = document.createElement('style');
+styleSheet.textContent = improvedStyles;
+document.head.appendChild(styleSheet);
