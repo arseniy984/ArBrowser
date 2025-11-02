@@ -909,4 +909,411 @@ async function handleDevApplication(e) {
         });
 
         notificationManager.showBrowserNotification(
-            'Заявка
+            'Заявка отправлена',
+            'Ваша заявка в команду разработки успешно отправлена!'
+        );
+
+        alert('Заявка отправлена! Мы рассмотрим вашу кандидатуру и свяжемся с вами.');
+        e.target.reset();
+        document.getElementById('devModal').style.display = 'none';
+        
+        await showUserMenu(userManager.getCurrentUser());
+    } catch (error) {
+        alert('Ошибка при отправке заявки: ' + error.message);
+    }
+}
+
+// Admin functions
+function showAdminLogin() {
+    const loginModal = document.createElement('div');
+    loginModal.className = 'login-modal';
+    loginModal.innerHTML = `
+        <div class="login-content">
+            <h2>Вход в админ панель</h2>
+            <form class="login-form" id="adminLoginForm">
+                <input type="password" id="adminPassword" placeholder="Введите пароль" required>
+                <div class="error-message" id="loginError">Неверный пароль!</div>
+                <button type="submit">Войти</button>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(loginModal);
+
+    loginModal.style.display = 'block';
+
+    document.getElementById('adminLoginForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const password = document.getElementById('adminPassword').value;
+        const errorElement = document.getElementById('loginError');
+        
+        if (passwordManager.verifyPassword(password)) {
+            passwordManager.setLoggedIn(true);
+            loginModal.style.display = 'none';
+            document.body.removeChild(loginModal);
+            showAdminPanel();
+        } else {
+            errorElement.style.display = 'block';
+        }
+    });
+
+    loginModal.addEventListener('click', (e) => {
+        if (e.target === loginModal) {
+            loginModal.style.display = 'none';
+            document.body.removeChild(loginModal);
+        }
+    });
+}
+
+async function showAdminPanel() {
+    document.querySelector('.content').classList.add('hidden');
+    document.getElementById('adminPanel').classList.remove('hidden');
+    await loadApplications();
+    await loadContent();
+}
+
+function hideAdminPanel() {
+    document.getElementById('adminPanel').classList.add('hidden');
+    document.querySelector('.content').classList.remove('hidden');
+}
+
+function handleAdminLogout() {
+    passwordManager.setLoggedIn(false);
+    hideAdminPanel();
+}
+
+async function loadApplications() {
+    await loadBetaApplications();
+    await loadDevApplications();
+}
+
+async function loadBetaApplications() {
+    const applications = await applicationManager.getBetaApplications();
+    const applicationsList = document.getElementById('betaApplications');
+    applicationsList.innerHTML = '';
+    
+    if (applications.length === 0) {
+        applicationsList.innerHTML = '<p>Бета-заявок пока нет</p>';
+        return;
+    }
+    
+    // Сортируем заявки по дате (новые сверху)
+    applications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    for (const app of applications) {
+        const user = await dbManager.get('users', app.userId);
+        const appElement = document.createElement('div');
+        appElement.className = 'application-item';
+        appElement.innerHTML = `
+            <h4>Бета-заявка <span class="status-badge status-${app.status}">${getStatusText(app.status)}</span></h4>
+            <p><strong>ID:</strong> ${app.id}</p>
+            <p><strong>Пользователь:</strong> ${user ? `${user.firstName} ${user.lastName} (${user.email})` : 'N/A'}</p>
+            <p><strong>Имя:</strong> ${app.firstName} ${app.lastName}</p>
+            <p><strong>Email:</strong> ${app.email}</p>
+            <p><strong>Причина:</strong> ${app.reason}</p>
+            <p><strong>Время подачи:</strong> ${new Date(app.createdAt).toLocaleString()}</p>
+            ${app.adminComment ? `<p><strong>Комментарий админа:</strong> ${app.adminComment}</p>` : ''}
+            ${app.status === 'pending' ? `
+                <div class="action-buttons">
+                    <button class="approve-btn" onclick="adminApproveApplication('${app.id}', 'beta')">Одобрить</button>
+                    <button class="reject-btn" onclick="adminRejectApplication('${app.id}', 'beta')">Отклонить</button>
+                    <button class="comment-btn" onclick="adminShowCommentModal('${app.id}', 'beta')">Комментарий</button>
+                </div>
+            ` : ''}
+            <button class="delete-btn" onclick="adminDeleteApplication('${app.id}', 'beta')">Удалить</button>
+        `;
+        applicationsList.appendChild(appElement);
+    }
+}
+
+async function loadDevApplications() {
+    const applications = await applicationManager.getDevApplications();
+    const applicationsList = document.getElementById('devApplications');
+    applicationsList.innerHTML = '';
+    
+    if (applications.length === 0) {
+        applicationsList.innerHTML = '<p>Заявок в команду пока нет</p>';
+        return;
+    }
+    
+    // Сортируем заявки по дате (новые сверху)
+    applications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    const roleNames = {
+        'frontend': 'Frontend разработчик',
+        'backend': 'Backend разработчик', 
+        'fullstack': 'Fullstack разработчик',
+        'designer': 'UI/UX дизайнер',
+        'qa': 'QA инженер',
+        'devops': 'DevOps инженер',
+        'marketing': 'Маркетолог',
+        'other': 'Другое'
+    };
+    
+    for (const app of applications) {
+        const user = await dbManager.get('users', app.userId);
+        const appElement = document.createElement('div');
+        appElement.className = 'application-item';
+        appElement.innerHTML = `
+            <h4>Заявка в команду <span class="status-badge status-${app.status}">${getStatusText(app.status)}</span></h4>
+            <p><strong>ID:</strong> ${app.id}</p>
+            <p><strong>Пользователь:</strong> ${user ? `${user.firstName} ${user.lastName} (${user.email})` : 'N/A'}</p>
+            <p><strong>Имя:</strong> ${app.firstName} ${app.lastName}</p>
+            <p><strong>Email:</strong> ${app.email}</p>
+            <p><strong>Роль:</strong> <span class="role-badge ${app.role}">${roleNames[app.role] || app.role}</span></p>
+            <p><strong>Опыт:</strong> ${app.experience} лет</p>
+            <p><strong>Навыки:</strong> ${app.skills}</p>
+            <p><strong>Мотивация:</strong> ${app.motivation}</p>
+            ${app.portfolio ? `<p><strong>Портфолио:</strong> <a href="${app.portfolio}" target="_blank">${app.portfolio}</a></p>` : ''}
+            <p><strong>Время подачи:</strong> ${new Date(app.createdAt).toLocaleString()}</p>
+            ${app.adminComment ? `<p><strong>Комментарий админа:</strong> ${app.adminComment}</p>` : ''}
+            ${app.status === 'pending' ? `
+                <div class="action-buttons">
+                    <button class="approve-btn" onclick="adminApproveApplication('${app.id}', 'dev')">Одобрить</button>
+                    <button class="reject-btn" onclick="adminRejectApplication('${app.id}', 'dev')">Отклонить</button>
+                    <button class="comment-btn" onclick="adminShowCommentModal('${app.id}', 'dev')">Комментарий</button>
+                </div>
+            ` : ''}
+            <button class="delete-btn" onclick="adminDeleteApplication('${app.id}', 'dev')">Удалить</button>
+        `;
+        applicationsList.appendChild(appElement);
+    }
+}
+
+async function loadUsersList() {
+    const users = await userManager.getAllUsers();
+    const usersList = document.getElementById('usersList');
+    usersList.innerHTML = '';
+    
+    if (users.length === 0) {
+        usersList.innerHTML = '<p>Пользователей пока нет</p>';
+        return;
+    }
+    
+    // Сортируем пользователей по дате регистрации (новые сверху)
+    users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    for (const user of users) {
+        const userElement = document.createElement('div');
+        userElement.className = 'application-item';
+        userElement.innerHTML = `
+            <h4>Пользователь</h4>
+            <p><strong>ID:</strong> ${user.id}</p>
+            <p><strong>Имя:</strong> ${user.firstName} ${user.lastName}</p>
+            <p><strong>Email:</strong> ${user.email}</p>
+            <p><strong>Зарегистрирован:</strong> ${new Date(user.createdAt).toLocaleString()}</p>
+            <p><strong>Последний вход:</strong> ${user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'Никогда'}</p>
+            <p><strong>Уведомления:</strong> ${user.notificationPermission ? 'Разрешены' : 'Запрещены'}</p>
+        `;
+        usersList.appendChild(userElement);
+    }
+}
+
+function getStatusText(status) {
+    const statusTexts = {
+        'pending': 'На рассмотрении',
+        'approved': 'Одобрено', 
+        'rejected': 'Отклонено'
+    };
+    return statusTexts[status] || status;
+}
+
+// Admin application actions (global functions)
+async function adminApproveApplication(applicationId, type) {
+    if (confirm('Одобрить эту заявку?')) {
+        const application = await applicationManager.updateApplicationStatus(applicationId, type, 'approved');
+        if (application) {
+            const user = await dbManager.get('users', application.userId);
+            if (user) {
+                await userManager.addNotification(user.id, {
+                    title: type === 'beta' ? 'Заявка на бета-тестирование одобрена' : 'Заявка в команду одобрена',
+                    message: type === 'beta' 
+                        ? 'Поздравляем! Ваша заявка на бета-тестирование ArBrowser была одобрена. Мы свяжемся с вами в ближайшее время.'
+                        : 'Поздравляем! Ваша заявка на участие в команде разработки была одобрена. Мы свяжемся с вами для обсуждения деталей.',
+                    type: 'success',
+                    applicationId: applicationId
+                });
+
+                notificationManager.showBrowserNotification(
+                    'Заявка одобрена!',
+                    type === 'beta' 
+                        ? 'Ваша заявка на бета-тестирование была одобрена!'
+                        : 'Ваша заявка в команду была одобрена!'
+                );
+
+                notificationManager.sendEmailNotification(
+                    user.email,
+                    type === 'beta' ? 'Заявка на бета-тестирование ArBrowser одобрена' : 'Заявка в команду ArBrowser одобрена',
+                    type === 'beta'
+                        ? `Уважаемый(ая) ${user.firstName} ${user.lastName}!\n\nВаша заявка на бета-тестирование ArBrowser была одобрена. Мы свяжемся с вами в ближайшее время для предоставления доступа к бета-версии.\n\nС уважением,\nКоманда ArBrowser`
+                        : `Уважаемый(ая) ${user.firstName} ${user.lastName}!\n\nВаша заявка на участие в команде разработки ArBrowser была одобрена. Мы свяжемся с вами в ближайшее время для обсуждения деталей сотрудничества.\n\nС уважением,\nКоманда ArBrowser`
+                );
+            }
+            
+            await loadApplications();
+            alert('Заявка одобрена! Пользователь получил уведомление.');
+        }
+    }
+}
+
+async function adminRejectApplication(applicationId, type) {
+    adminShowCommentModal(applicationId, type, true);
+}
+
+function adminShowCommentModal(applicationId, type, isRejection = false) {
+    currentCommentAppId = applicationId;
+    currentCommentAppType = type;
+    currentCommentIsRejection = isRejection;
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal comment-modal';
+    modal.innerHTML = `
+        <div class="modal-content comment-content">
+            <span class="close">&times;</span>
+            <h2>${isRejection ? 'Отклонить заявку' : 'Добавить комментарий'}</h2>
+            <textarea class="comment-textarea" placeholder="${isRejection ? 'Укажите причину отказа...' : 'Введите ваш комментарий...'}" required></textarea>
+            <div class="comment-actions">
+                <button class="secondary-btn" onclick="adminCloseCommentModal()">Отмена</button>
+                <button class="${isRejection ? 'reject-btn' : 'comment-btn'}" onclick="adminSubmitComment()">
+                    ${isRejection ? 'Отклонить' : 'Отправить'}
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.style.display = 'block';
+    
+    modal.querySelector('.close').addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
+    
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            document.body.removeChild(modal);
+        }
+    });
+}
+
+async function adminSubmitComment() {
+    const modal = document.querySelector('.comment-modal');
+    const comment = modal.querySelector('.comment-textarea').value;
+    
+    if (!comment.trim()) {
+        alert('Пожалуйста, введите комментарий');
+        return;
+    }
+    
+    const status = currentCommentIsRejection ? 'rejected' : 'pending';
+    const application = await applicationManager.updateApplicationStatus(currentCommentAppId, currentCommentAppType, status, comment);
+    
+    if (application) {
+        const user = await dbManager.get('users', application.userId);
+        if (user) {
+            if (currentCommentIsRejection) {
+                await userManager.addNotification(user.id, {
+                    title: currentCommentAppType === 'beta' ? 'Заявка на бета-тестирование отклонена' : 'Заявка в команду отклонена',
+                    message: currentCommentAppType === 'beta'
+                        ? 'К сожалению, ваша заявка на бета-тестирование ArBrowser была отклонена.'
+                        : 'К сожалению, ваша заявка на участие в команде разработки была отклонена.',
+                    type: 'error',
+                    applicationId: currentCommentAppId,
+                    adminComment: comment
+                });
+
+                notificationManager.showBrowserNotification(
+                    'Заявка отклонена',
+                    currentCommentAppType === 'beta'
+                        ? 'Ваша заявка на бета-тестирование была отклонена.'
+                        : 'Ваша заявка в команду была отклонена.'
+                );
+
+                notificationManager.sendEmailNotification(
+                    user.email,
+                    currentCommentAppType === 'beta' ? 'Заявка на бета-тестирование ArBrowser отклонена' : 'Заявка в команду ArBrowser отклонена',
+                    currentCommentAppType === 'beta'
+                        ? `Уважаемый(ая) ${user.firstName} ${user.lastName}!\n\nК сожалению, ваша заявка на бета-тестирование ArBrowser была отклонена.\n\nПричина: ${comment}\n\nС уважением,\nКоманда ArBrowser`
+                        : `Уважаемый(ая) ${user.firstName} ${user.lastName}!\n\nК сожалению, ваша заявка на участие в команде разработки ArBrowser была отклонена.\n\nПричина: ${comment}\n\nС уважением,\nКоманда ArBrowser`
+                );
+            } else {
+                await userManager.addNotification(user.id, {
+                    title: 'Комментарий к вашей заявке',
+                    message: 'Администратор оставил комментарий к вашей заявке.',
+                    type: 'warning',
+                    applicationId: currentCommentAppId,
+                    adminComment: comment
+                });
+
+                notificationManager.showBrowserNotification(
+                    'Новый комментарий',
+                    'Администратор оставил комментарий к вашей заявке.'
+                );
+            }
+        }
+        
+        const modal = document.querySelector('.comment-modal');
+        if (modal) {
+            document.body.removeChild(modal);
+        }
+        await loadApplications();
+        alert(currentCommentIsRejection ? 'Заявка отклонена!' : 'Комментарий добавлен!');
+    }
+}
+
+function adminCloseCommentModal() {
+    const modal = document.querySelector('.comment-modal');
+    if (modal) {
+        document.body.removeChild(modal);
+    }
+}
+
+async function adminDeleteApplication(applicationId, type) {
+    if (confirm('Вы уверены, что хотите удалить эту заявку?')) {
+        await applicationManager.deleteApplication(applicationId, type);
+        await loadApplications();
+    }
+}
+
+async function saveContent() {
+    const siteContent = {
+        heroTitle: document.getElementById('heroTitle').value,
+        heroSubtitle: document.getElementById('heroSubtitle').value,
+        releaseDate: document.getElementById('releaseDate').value
+    };
+    
+    await siteContentManager.updateContent(siteContent);
+    
+    document.querySelector('.hero-title').textContent = siteContent.heroTitle;
+    document.querySelector('.hero-subtitle').textContent = siteContent.heroSubtitle;
+    document.querySelector('.release-info h4').textContent = `📅 Примерный релиз: ${siteContent.releaseDate}`;
+    
+    alert('Изменения сохранены!');
+}
+
+async function loadContent() {
+    const content = await siteContentManager.getContent();
+    document.getElementById('heroTitle').value = content.heroTitle;
+    document.getElementById('heroSubtitle').value = content.heroSubtitle;
+    document.getElementById('releaseDate').value = content.releaseDate;
+}
+
+// Intersection Observer for animations
+const observerOptions = {
+    threshold: 0.1,
+    rootMargin: '0px 0px -50px 0px'
+};
+
+const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            entry.target.style.opacity = '1';
+            entry.target.style.transform = 'translateY(0)';
+        }
+    });
+}, observerOptions);
+
+document.querySelectorAll('.feature-card').forEach(card => {
+    card.style.opacity = '0';
+    card.style.transform = 'translateY(30px)';
+    card.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+    observer.observe(card);
+});
