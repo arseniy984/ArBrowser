@@ -1,3 +1,145 @@
+// Database Manager
+class DatabaseManager {
+    constructor() {
+        this.dbName = 'ArBrowserDB';
+        this.version = 1;
+        this.db = null;
+        this.init();
+    }
+
+    async init() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.version);
+
+            request.onerror = () => {
+                console.error('Ошибка открытия базы данных');
+                reject(request.error);
+            };
+
+            request.onsuccess = () => {
+                this.db = request.result;
+                console.log('База данных успешно открыта');
+                resolve(this.db);
+            };
+
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                
+                // Создаем хранилище для пользователей
+                if (!db.objectStoreNames.contains('users')) {
+                    const userStore = db.createObjectStore('users', { keyPath: 'id', autoIncrement: true });
+                    userStore.createIndex('email', 'email', { unique: true });
+                    userStore.createIndex('createdAt', 'createdAt');
+                }
+
+                // Создаем хранилище для бета-заявок
+                if (!db.objectStoreNames.contains('betaApplications')) {
+                    const betaStore = db.createObjectStore('betaApplications', { keyPath: 'id', autoIncrement: true });
+                    betaStore.createIndex('userId', 'userId');
+                    betaStore.createIndex('email', 'email');
+                    betaStore.createIndex('status', 'status');
+                    betaStore.createIndex('createdAt', 'createdAt');
+                }
+
+                // Создаем хранилище для заявок в команду
+                if (!db.objectStoreNames.contains('devApplications')) {
+                    const devStore = db.createObjectStore('devApplications', { keyPath: 'id', autoIncrement: true });
+                    devStore.createIndex('userId', 'userId');
+                    devStore.createIndex('email', 'email');
+                    devStore.createIndex('status', 'status');
+                    devStore.createIndex('createdAt', 'createdAt');
+                }
+
+                // Создаем хранилище для уведомлений
+                if (!db.objectStoreNames.contains('notifications')) {
+                    const notifStore = db.createObjectStore('notifications', { keyPath: 'id', autoIncrement: true });
+                    notifStore.createIndex('userId', 'userId');
+                    notifStore.createIndex('read', 'read');
+                    notifStore.createIndex('createdAt', 'createdAt');
+                }
+
+                // Создаем хранилище для контента сайта
+                if (!db.objectStoreNames.contains('siteContent')) {
+                    const contentStore = db.createObjectStore('siteContent', { keyPath: 'id' });
+                }
+
+                console.log('Структура базы данных создана');
+            };
+        });
+    }
+
+    // Общие методы для работы с хранилищами
+    async add(storeName, data) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([storeName], 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.add(data);
+
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async get(storeName, key) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([storeName], 'readonly');
+            const store = transaction.objectStore(storeName);
+            const request = store.get(key);
+
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async getAll(storeName, indexName = null, query = null) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([storeName], 'readonly');
+            const store = transaction.objectStore(storeName);
+            const target = indexName ? store.index(indexName) : store;
+            const request = query ? target.getAll(query) : target.getAll();
+
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async update(storeName, data) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([storeName], 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.put(data);
+
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async delete(storeName, key) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([storeName], 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.delete(key);
+
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async count(storeName, indexName = null, query = null) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([storeName], 'readonly');
+            const store = transaction.objectStore(storeName);
+            const target = indexName ? store.index(indexName) : store;
+            const request = query ? target.count(query) : target.count();
+
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+}
+
+const dbManager = new DatabaseManager();
+
 // Password Manager
 class PasswordManager {
     constructor() {
@@ -32,42 +174,49 @@ class UserManager {
         this.currentUser = null;
     }
 
-    register(email, firstName, lastName, password) {
-        const users = JSON.parse(localStorage.getItem('users')) || [];
-        
-        if (users.find(user => user.email === email)) {
+    async register(email, firstName, lastName, password) {
+        // Проверяем, существует ли пользователь с таким email
+        const existingUsers = await dbManager.getAll('users', 'email', email);
+        if (existingUsers.length > 0) {
             throw new Error('Пользователь с таким email уже существует');
         }
 
         const user = {
-            id: Date.now() + Math.random().toString(36).substr(2, 9),
-            email,
-            firstName,
-            lastName,
+            email: email.toLowerCase().trim(),
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
             password: btoa(unescape(encodeURIComponent(password + 'USER_SALT'))),
-            registeredAt: new Date().toISOString(),
-            notifications: [],
-            notificationPermission: false
+            createdAt: new Date().toISOString(),
+            notificationPermission: false,
+            lastLogin: new Date().toISOString()
         };
 
-        users.push(user);
-        localStorage.setItem('users', JSON.stringify(users));
+        const userId = await dbManager.add('users', user);
+        user.id = userId;
         
         return user;
     }
 
-    login(email, password) {
-        const users = JSON.parse(localStorage.getItem('users')) || [];
-        const encodedPassword = btoa(unescape(encodeURIComponent(password + 'USER_SALT')));
-        const user = users.find(u => u.email === email && u.password === encodedPassword);
-        
-        if (user) {
-            this.currentUser = user;
-            localStorage.setItem('currentUser', JSON.stringify(user));
-            return user;
+    async login(email, password) {
+        const users = await dbManager.getAll('users', 'email', email.toLowerCase().trim());
+        if (users.length === 0) {
+            throw new Error('Пользователь с таким email не найден');
         }
+
+        const user = users[0];
+        const encodedPassword = btoa(unescape(encodeURIComponent(password + 'USER_SALT')));
         
-        throw new Error('Неверный email или пароль');
+        if (user.password !== encodedPassword) {
+            throw new Error('Неверный пароль');
+        }
+
+        // Обновляем время последнего входа
+        user.lastLogin = new Date().toISOString();
+        await dbManager.update('users', user);
+
+        this.currentUser = user;
+        localStorage.setItem('currentUser', JSON.stringify(user));
+        return user;
     }
 
     logout() {
@@ -83,71 +232,59 @@ class UserManager {
         return this.currentUser;
     }
 
-    updateUser(userId, updates) {
-        const users = JSON.parse(localStorage.getItem('users')) || [];
-        const userIndex = users.findIndex(u => u.id === userId);
+    async updateUser(userId, updates) {
+        const user = await dbManager.get('users', userId);
+        if (!user) {
+            throw new Error('Пользователь не найден');
+        }
+
+        const updatedUser = { ...user, ...updates };
+        await dbManager.update('users', updatedUser);
         
-        if (userIndex !== -1) {
-            users[userIndex] = { ...users[userIndex], ...updates };
-            localStorage.setItem('users', JSON.stringify(users));
-            
-            if (this.currentUser && this.currentUser.id === userId) {
-                this.currentUser = users[userIndex];
-                localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-            }
-            
-            return users[userIndex];
+        if (this.currentUser && this.currentUser.id === userId) {
+            this.currentUser = updatedUser;
+            localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+        }
+        
+        return updatedUser;
+    }
+
+    async addNotification(userId, notification) {
+        const newNotification = {
+            userId: userId,
+            title: notification.title,
+            message: notification.message,
+            type: notification.type || 'info',
+            read: false,
+            createdAt: new Date().toISOString(),
+            applicationId: notification.applicationId,
+            adminComment: notification.adminComment
+        };
+
+        await dbManager.add('notifications', newNotification);
+        return newNotification;
+    }
+
+    async getNotifications(userId) {
+        return await dbManager.getAll('notifications', 'userId', userId);
+    }
+
+    async markNotificationAsRead(notificationId) {
+        const notification = await dbManager.get('notifications', notificationId);
+        if (notification) {
+            notification.read = true;
+            await dbManager.update('notifications', notification);
+            return notification;
         }
     }
 
-    addNotification(userId, notification) {
-        const users = JSON.parse(localStorage.getItem('users')) || [];
-        const userIndex = users.findIndex(u => u.id === userId);
-        
-        if (userIndex !== -1) {
-            if (!users[userIndex].notifications) {
-                users[userIndex].notifications = [];
-            }
-            
-            const newNotification = {
-                id: Date.now() + Math.random().toString(36).substr(2, 9),
-                title: notification.title,
-                message: notification.message,
-                type: notification.type || 'info',
-                read: false,
-                createdAt: new Date().toISOString(),
-                applicationId: notification.applicationId,
-                adminComment: notification.adminComment
-            };
-            
-            users[userIndex].notifications.unshift(newNotification);
-            localStorage.setItem('users', JSON.stringify(users));
-            
-            if (this.currentUser && this.currentUser.id === userId) {
-                this.currentUser = users[userIndex];
-                localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-            }
-            
-            return newNotification;
-        }
+    async getUnreadNotificationsCount(userId) {
+        const notifications = await this.getNotifications(userId);
+        return notifications.filter(n => !n.read).length;
     }
 
-    markNotificationAsRead(userId, notificationId) {
-        const users = JSON.parse(localStorage.getItem('users')) || [];
-        const userIndex = users.findIndex(u => u.id === userId);
-        
-        if (userIndex !== -1 && users[userIndex].notifications) {
-            const notificationIndex = users[userIndex].notifications.findIndex(n => n.id === notificationId);
-            if (notificationIndex !== -1) {
-                users[userIndex].notifications[notificationIndex].read = true;
-                localStorage.setItem('users', JSON.stringify(users));
-                
-                if (this.currentUser && this.currentUser.id === userId) {
-                    this.currentUser = users[userIndex];
-                    localStorage.setItem('currentUser', JSON.stringify(this.currentUser));
-                }
-            }
-        }
+    async getAllUsers() {
+        return await dbManager.getAll('users');
     }
 }
 
@@ -188,9 +325,7 @@ class NotificationManager {
 
     sendEmailNotification(email, subject, message) {
         console.log('Отправка email:', { email, subject, message });
-        const emails = JSON.parse(localStorage.getItem('pendingEmails')) || [];
-        emails.push({ email, subject, message, timestamp: new Date().toISOString() });
-        localStorage.setItem('pendingEmails', JSON.stringify(emails));
+        // В реальном приложении здесь был бы запрос к серверу
     }
 }
 
@@ -198,65 +333,136 @@ const notificationManager = new NotificationManager();
 
 // Application Manager
 class ApplicationManager {
-    submitBetaApplication(data, userId) {
-        const applications = JSON.parse(localStorage.getItem('betaApplications')) || [];
+    async submitBetaApplication(data, userId) {
+        // Проверяем, нет ли уже заявки от этого пользователя
+        const existingApps = await dbManager.getAll('betaApplications', 'userId', userId);
+        if (existingApps.length > 0) {
+            throw new Error('Вы уже подавали заявку на бета-тестирование');
+        }
+
         const application = {
-            ...data,
-            id: Date.now() + Math.random().toString(36).substr(2, 9),
             userId: userId,
+            email: data.email.toLowerCase().trim(),
+            firstName: data.firstName.trim(),
+            lastName: data.lastName.trim(),
+            reason: data.reason.trim(),
             status: 'pending',
-            submittedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
             adminComment: null
         };
 
-        applications.push(application);
-        localStorage.setItem('betaApplications', JSON.stringify(applications));
+        await dbManager.add('betaApplications', application);
         return application;
     }
 
-    submitDevApplication(data, userId) {
-        const applications = JSON.parse(localStorage.getItem('devApplications')) || [];
+    async submitDevApplication(data, userId) {
+        // Проверяем, нет ли уже заявки от этого пользователя
+        const existingApps = await dbManager.getAll('devApplications', 'userId', userId);
+        if (existingApps.length > 0) {
+            throw new Error('Вы уже подавали заявку в команду разработки');
+        }
+
         const application = {
-            ...data,
-            id: Date.now() + Math.random().toString(36).substr(2, 9),
             userId: userId,
+            email: data.email.toLowerCase().trim(),
+            firstName: data.firstName.trim(),
+            lastName: data.lastName.trim(),
+            role: data.role,
+            experience: parseInt(data.experience),
+            skills: data.skills.trim(),
+            motivation: data.motivation.trim(),
+            portfolio: data.portfolio?.trim() || '',
             status: 'pending',
-            submittedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
             adminComment: null
         };
 
-        applications.push(application);
-        localStorage.setItem('devApplications', JSON.stringify(applications));
+        await dbManager.add('devApplications', application);
         return application;
     }
 
-    updateApplicationStatus(applicationId, type, status, adminComment = null) {
-        const storageKey = type === 'beta' ? 'betaApplications' : 'devApplications';
-        const applications = JSON.parse(localStorage.getItem(storageKey)) || [];
-        const applicationIndex = applications.findIndex(app => app.id === applicationId);
+    async updateApplicationStatus(applicationId, type, status, adminComment = null) {
+        const storeName = type === 'beta' ? 'betaApplications' : 'devApplications';
+        const application = await dbManager.get(storeName, applicationId);
         
-        if (applicationIndex !== -1) {
-            applications[applicationIndex].status = status;
-            applications[applicationIndex].adminComment = adminComment;
-            applications[applicationIndex].processedAt = new Date().toISOString();
-            localStorage.setItem(storageKey, JSON.stringify(applications));
-            
-            return applications[applicationIndex];
+        if (application) {
+            application.status = status;
+            application.adminComment = adminComment;
+            application.processedAt = new Date().toISOString();
+            await dbManager.update(storeName, application);
+            return application;
         }
     }
 
-    getApplicationsByUserId(userId) {
-        const betaApps = JSON.parse(localStorage.getItem('betaApplications')) || [];
-        const devApps = JSON.parse(localStorage.getItem('devApplications')) || [];
+    async getBetaApplications() {
+        return await dbManager.getAll('betaApplications');
+    }
+
+    async getDevApplications() {
+        return await dbManager.getAll('devApplications');
+    }
+
+    async deleteApplication(applicationId, type) {
+        const storeName = type === 'beta' ? 'betaApplications' : 'devApplications';
+        await dbManager.delete(storeName, applicationId);
+    }
+
+    async getApplicationsByUserId(userId) {
+        const betaApps = await dbManager.getAll('betaApplications', 'userId', userId);
+        const devApps = await dbManager.getAll('devApplications', 'userId', userId);
         
         return {
-            beta: betaApps.filter(app => app.userId === userId),
-            dev: devApps.filter(app => app.userId === userId)
+            beta: betaApps,
+            dev: devApps
         };
     }
 }
 
 const applicationManager = new ApplicationManager();
+
+// Site Content Manager
+class SiteContentManager {
+    constructor() {
+        this.defaultContent = {
+            id: 'main',
+            heroTitle: 'ArBrowser',
+            heroSubtitle: 'Браузер нового поколения от Ткаченко Арсения',
+            releaseDate: 'Декабрь 2025'
+        };
+    }
+
+    async initialize() {
+        try {
+            const content = await dbManager.get('siteContent', 'main');
+            if (!content) {
+                await dbManager.add('siteContent', this.defaultContent);
+                return this.defaultContent;
+            }
+            return content;
+        } catch (error) {
+            console.error('Ошибка инициализации контента:', error);
+            return this.defaultContent;
+        }
+    }
+
+    async getContent() {
+        try {
+            const content = await dbManager.get('siteContent', 'main');
+            return content || this.defaultContent;
+        } catch (error) {
+            return this.defaultContent;
+        }
+    }
+
+    async updateContent(updates) {
+        const content = await this.getContent();
+        const updatedContent = { ...content, ...updates };
+        await dbManager.update('siteContent', updatedContent);
+        return updatedContent;
+    }
+}
+
+const siteContentManager = new SiteContentManager();
 
 // Global variables for admin actions
 let currentCommentAppId = null;
@@ -264,45 +470,55 @@ let currentCommentAppType = null;
 let currentCommentIsRejection = false;
 
 // Initialize the application
-document.addEventListener('DOMContentLoaded', function() {
-    initializeApp();
+document.addEventListener('DOMContentLoaded', async function() {
+    await initializeApp();
 });
 
-function initializeApp() {
-    // Preloader
-    const preloader = document.querySelector('.preloader');
-    const content = document.querySelector('.content');
-    const percentage = document.querySelector('.loader-percentage');
-    
-    let progress = 0;
-    const interval = setInterval(() => {
-        progress += Math.random() * 10;
-        if (progress >= 100) {
-            progress = 100;
-            clearInterval(interval);
-            
-            setTimeout(() => {
-                preloader.style.opacity = '0';
+async function initializeApp() {
+    try {
+        // Ждем инициализации базы данных
+        await dbManager.init();
+        await siteContentManager.initialize();
+        
+        // Preloader
+        const preloader = document.querySelector('.preloader');
+        const content = document.querySelector('.content');
+        const percentage = document.querySelector('.loader-percentage');
+        
+        let progress = 0;
+        const interval = setInterval(() => {
+            progress += Math.random() * 10;
+            if (progress >= 100) {
+                progress = 100;
+                clearInterval(interval);
+                
                 setTimeout(() => {
-                    preloader.style.display = 'none';
-                    content.classList.remove('hidden');
-                    content.style.opacity = '1';
-                    
-                    checkAuthStatus();
-                    if (passwordManager.isLoggedIn()) {
-                        showAdminPanel();
-                    }
+                    preloader.style.opacity = '0';
+                    setTimeout(() => {
+                        preloader.style.display = 'none';
+                        content.classList.remove('hidden');
+                        content.style.opacity = '1';
+                        
+                        checkAuthStatus();
+                        if (passwordManager.isLoggedIn()) {
+                            showAdminPanel();
+                        }
+                    }, 500);
                 }, 500);
-            }, 500);
-        }
-        percentage.textContent = Math.min(progress, 100).toFixed(0) + '%';
-    }, 100);
+            }
+            percentage.textContent = Math.min(progress, 100).toFixed(0) + '%';
+        }, 100);
 
-    // Initialize event listeners
-    initializeEventListeners();
-    
-    // Initialize secret admin combo
-    initializeSecretAdminCombo();
+        // Initialize event listeners
+        initializeEventListeners();
+        initializeSecretAdminCombo();
+        
+    } catch (error) {
+        console.error('Ошибка инициализации приложения:', error);
+        document.querySelector('.preloader').style.display = 'none';
+        document.querySelector('.content').classList.remove('hidden');
+        alert('Ошибка загрузки приложения. Пожалуйста, обновите страницу.');
+    }
 }
 
 function initializeSecretAdminCombo() {
@@ -452,10 +668,10 @@ function initializeEventListeners() {
 }
 
 // Auth functions
-function checkAuthStatus() {
+async function checkAuthStatus() {
     const user = userManager.getCurrentUser();
     if (user) {
-        showUserMenu(user);
+        await showUserMenu(user);
         if (!user.notificationPermission && Notification.permission === 'default') {
             setTimeout(() => {
                 document.getElementById('notificationModal').style.display = 'block';
@@ -470,12 +686,12 @@ function showAuthModal() {
     document.getElementById('authModal').style.display = 'block';
 }
 
-function showUserMenu(user) {
+async function showUserMenu(user) {
     document.getElementById('navAuthBtn').classList.add('hidden');
     document.getElementById('userMenu').classList.remove('hidden');
     document.getElementById('userName').textContent = `${user.firstName} ${user.lastName}`;
     
-    const unreadCount = user.notifications ? user.notifications.filter(n => !n.read).length : 0;
+    const unreadCount = await userManager.getUnreadNotificationsCount(user.id);
     const notificationsBtn = document.getElementById('notificationsBtn');
     notificationsBtn.textContent = unreadCount > 0 ? `🔔 (${unreadCount})` : '🔔';
 }
@@ -491,8 +707,8 @@ async function handleLogin(e) {
     const password = document.getElementById('loginPassword').value;
 
     try {
-        const user = userManager.login(email, password);
-        showUserMenu(user);
+        const user = await userManager.login(email, password);
+        await showUserMenu(user);
         document.getElementById('authModal').style.display = 'none';
         e.target.reset();
         
@@ -525,8 +741,8 @@ async function handleRegister(e) {
     }
 
     try {
-        const user = userManager.register(email, firstName, lastName, password);
-        showUserMenu(user);
+        const user = await userManager.register(email, firstName, lastName, password);
+        await showUserMenu(user);
         document.getElementById('authModal').style.display = 'none';
         e.target.reset();
         alert('Регистрация успешна!');
@@ -552,7 +768,7 @@ async function enableNotifications() {
     if (permissionGranted) {
         const user = userManager.getCurrentUser();
         if (user) {
-            userManager.updateUser(user.id, { notificationPermission: true });
+            await userManager.updateUser(user.id, { notificationPermission: true });
         }
         alert('Уведомления разрешены!');
     } else {
@@ -566,26 +782,31 @@ function skipNotifications() {
     document.getElementById('notificationModal').style.display = 'none';
 }
 
-function toggleNotifications() {
+async function toggleNotifications() {
     const notificationsPanel = document.getElementById('userNotifications');
     if (notificationsPanel.classList.contains('hidden')) {
-        showNotifications();
+        await showNotifications();
     } else {
         closeNotifications();
     }
 }
 
-function showNotifications() {
+async function showNotifications() {
     const user = userManager.getCurrentUser();
     if (!user) return;
 
     const notificationsList = document.getElementById('notificationsList');
     notificationsList.innerHTML = '';
 
-    if (!user.notifications || user.notifications.length === 0) {
+    const notifications = await userManager.getNotifications(user.id);
+
+    if (!notifications || notifications.length === 0) {
         notificationsList.innerHTML = '<p>У вас пока нет уведомлений</p>';
     } else {
-        user.notifications.forEach(notification => {
+        // Сортируем уведомления по дате (новые сверху)
+        notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        
+        for (const notification of notifications) {
             const notificationElement = document.createElement('div');
             notificationElement.className = `notification-item ${notification.type} ${notification.read ? '' : 'unread'}`;
             notificationElement.innerHTML = `
@@ -597,15 +818,17 @@ function showNotifications() {
                 ${notification.adminComment ? `<div class="admin-comment"><strong>Комментарий администратора:</strong> ${notification.adminComment}</div>` : ''}
             `;
             
-            notificationElement.addEventListener('click', () => {
-                userManager.markNotificationAsRead(user.id, notification.id);
-                notificationElement.classList.remove('unread');
-                const unreadCount = user.notifications.filter(n => !n.read).length - 1;
-                document.getElementById('notificationsBtn').textContent = unreadCount > 0 ? `🔔 (${unreadCount})` : '🔔';
+            notificationElement.addEventListener('click', async () => {
+                if (!notification.read) {
+                    await userManager.markNotificationAsRead(notification.id);
+                    notificationElement.classList.remove('unread');
+                    const unreadCount = await userManager.getUnreadNotificationsCount(user.id);
+                    document.getElementById('notificationsBtn').textContent = unreadCount > 0 ? `🔔 (${unreadCount})` : '🔔';
+                }
             });
             
             notificationsList.appendChild(notificationElement);
-        });
+        }
     }
 
     document.getElementById('userNotifications').classList.remove('hidden');
@@ -616,7 +839,7 @@ function closeNotifications() {
 }
 
 // Application functions
-function handleBetaApplication(e) {
+async function handleBetaApplication(e) {
     e.preventDefault();
     const user = userManager.getCurrentUser();
     if (!user) {
@@ -632,9 +855,9 @@ function handleBetaApplication(e) {
     };
 
     try {
-        const application = applicationManager.submitBetaApplication(formData, user.id);
+        const application = await applicationManager.submitBetaApplication(formData, user.id);
         
-        userManager.addNotification(user.id, {
+        await userManager.addNotification(user.id, {
             title: 'Заявка на бета-тестирование отправлена',
             message: 'Ваша заявка на бета-тестирование ArBrowser успешно отправлена и находится на рассмотрении.',
             type: 'success',
@@ -650,13 +873,13 @@ function handleBetaApplication(e) {
         e.target.reset();
         document.getElementById('betaModal').style.display = 'none';
         
-        showUserMenu(userManager.getCurrentUser());
+        await showUserMenu(userManager.getCurrentUser());
     } catch (error) {
         alert('Ошибка при отправке заявки: ' + error.message);
     }
 }
 
-function handleDevApplication(e) {
+async function handleDevApplication(e) {
     e.preventDefault();
     const user = userManager.getCurrentUser();
     if (!user) {
@@ -676,9 +899,9 @@ function handleDevApplication(e) {
     };
 
     try {
-        const application = applicationManager.submitDevApplication(formData, user.id);
+        const application = await applicationManager.submitDevApplication(formData, user.id);
         
-        userManager.addNotification(user.id, {
+        await userManager.addNotification(user.id, {
             title: 'Заявка в команду отправлена',
             message: 'Ваша заявка на участие в команде разработки ArBrowser успешно отправлена и находится на рассмотрении.',
             type: 'success',
@@ -686,410 +909,4 @@ function handleDevApplication(e) {
         });
 
         notificationManager.showBrowserNotification(
-            'Заявка отправлена',
-            'Ваша заявка в команду разработки успешно отправлена!'
-        );
-
-        alert('Заявка отправлена! Мы рассмотрим вашу кандидатуру и свяжемся с вами.');
-        e.target.reset();
-        document.getElementById('devModal').style.display = 'none';
-        
-        showUserMenu(userManager.getCurrentUser());
-    } catch (error) {
-        alert('Ошибка при отправке заявки: ' + error.message);
-    }
-}
-
-// Admin functions
-function showAdminLogin() {
-    const loginModal = document.createElement('div');
-    loginModal.className = 'login-modal';
-    loginModal.innerHTML = `
-        <div class="login-content">
-            <h2>Вход в админ панель</h2>
-            <form class="login-form" id="adminLoginForm">
-                <input type="password" id="adminPassword" placeholder="Введите пароль" required>
-                <div class="error-message" id="loginError">Неверный пароль!</div>
-                <button type="submit">Войти</button>
-            </form>
-        </div>
-    `;
-    document.body.appendChild(loginModal);
-
-    loginModal.style.display = 'block';
-
-    document.getElementById('adminLoginForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        const password = document.getElementById('adminPassword').value;
-        const errorElement = document.getElementById('loginError');
-        
-        if (passwordManager.verifyPassword(password)) {
-            passwordManager.setLoggedIn(true);
-            loginModal.style.display = 'none';
-            document.body.removeChild(loginModal);
-            showAdminPanel();
-        } else {
-            errorElement.style.display = 'block';
-        }
-    });
-
-    loginModal.addEventListener('click', (e) => {
-        if (e.target === loginModal) {
-            loginModal.style.display = 'none';
-            document.body.removeChild(loginModal);
-        }
-    });
-}
-
-function showAdminPanel() {
-    document.querySelector('.content').classList.add('hidden');
-    document.getElementById('adminPanel').classList.remove('hidden');
-    loadApplications();
-    loadContent();
-}
-
-function hideAdminPanel() {
-    document.getElementById('adminPanel').classList.add('hidden');
-    document.querySelector('.content').classList.remove('hidden');
-}
-
-function handleAdminLogout() {
-    passwordManager.setLoggedIn(false);
-    hideAdminPanel();
-}
-
-function loadApplications() {
-    loadBetaApplications();
-    loadDevApplications();
-}
-
-function loadBetaApplications() {
-    const applications = JSON.parse(localStorage.getItem('betaApplications')) || [];
-    const applicationsList = document.getElementById('betaApplications');
-    applicationsList.innerHTML = '';
-    
-    if (applications.length === 0) {
-        applicationsList.innerHTML = '<p>Бета-заявок пока нет</p>';
-        return;
-    }
-    
-    applications.forEach((app, index) => {
-        const user = getUserById(app.userId);
-        const appElement = document.createElement('div');
-        appElement.className = 'application-item';
-        appElement.innerHTML = `
-            <h4>Бета-заявка #${index + 1} <span class="status-badge status-${app.status}">${getStatusText(app.status)}</span></h4>
-            <p><strong>ID:</strong> ${app.id}</p>
-            <p><strong>Пользователь:</strong> ${user ? `${user.firstName} ${user.lastName} (${user.email})` : 'N/A'}</p>
-            <p><strong>Имя:</strong> ${app.firstName} ${app.lastName}</p>
-            <p><strong>Email:</strong> ${app.email}</p>
-            <p><strong>Причина:</strong> ${app.reason}</p>
-            <p><strong>Время подачи:</strong> ${new Date(app.submittedAt).toLocaleString()}</p>
-            ${app.adminComment ? `<p><strong>Комментарий админа:</strong> ${app.adminComment}</p>` : ''}
-            ${app.status === 'pending' ? `
-                <div class="action-buttons">
-                    <button class="approve-btn" onclick="adminApproveApplication('${app.id}', 'beta')">Одобрить</button>
-                    <button class="reject-btn" onclick="adminRejectApplication('${app.id}', 'beta')">Отклонить</button>
-                    <button class="comment-btn" onclick="adminShowCommentModal('${app.id}', 'beta')">Комментарий</button>
-                </div>
-            ` : ''}
-            <button class="delete-btn" onclick="adminDeleteApplication('${app.id}', 'beta')">Удалить</button>
-        `;
-        applicationsList.appendChild(appElement);
-    });
-}
-
-function loadDevApplications() {
-    const applications = JSON.parse(localStorage.getItem('devApplications')) || [];
-    const applicationsList = document.getElementById('devApplications');
-    applicationsList.innerHTML = '';
-    
-    if (applications.length === 0) {
-        applicationsList.innerHTML = '<p>Заявок в команду пока нет</p>';
-        return;
-    }
-    
-    const roleNames = {
-        'frontend': 'Frontend разработчик',
-        'backend': 'Backend разработчик', 
-        'fullstack': 'Fullstack разработчик',
-        'designer': 'UI/UX дизайнер',
-        'qa': 'QA инженер',
-        'devops': 'DevOps инженер',
-        'marketing': 'Маркетолог',
-        'other': 'Другое'
-    };
-    
-    applications.forEach((app, index) => {
-        const user = getUserById(app.userId);
-        const appElement = document.createElement('div');
-        appElement.className = 'application-item';
-        appElement.innerHTML = `
-            <h4>Заявка в команду #${index + 1} <span class="status-badge status-${app.status}">${getStatusText(app.status)}</span></h4>
-            <p><strong>ID:</strong> ${app.id}</p>
-            <p><strong>Пользователь:</strong> ${user ? `${user.firstName} ${user.lastName} (${user.email})` : 'N/A'}</p>
-            <p><strong>Имя:</strong> ${app.firstName} ${app.lastName}</p>
-            <p><strong>Email:</strong> ${app.email}</p>
-            <p><strong>Роль:</strong> <span class="role-badge ${app.role}">${roleNames[app.role] || app.role}</span></p>
-            <p><strong>Опыт:</strong> ${app.experience} лет</p>
-            <p><strong>Навыки:</strong> ${app.skills}</p>
-            <p><strong>Мотивация:</strong> ${app.motivation}</p>
-            ${app.portfolio ? `<p><strong>Портфолио:</strong> <a href="${app.portfolio}" target="_blank">${app.portfolio}</a></p>` : ''}
-            <p><strong>Время подачи:</strong> ${new Date(app.submittedAt).toLocaleString()}</p>
-            ${app.adminComment ? `<p><strong>Комментарий админа:</strong> ${app.adminComment}</p>` : ''}
-            ${app.status === 'pending' ? `
-                <div class="action-buttons">
-                    <button class="approve-btn" onclick="adminApproveApplication('${app.id}', 'dev')">Одобрить</button>
-                    <button class="reject-btn" onclick="adminRejectApplication('${app.id}', 'dev')">Отклонить</button>
-                    <button class="comment-btn" onclick="adminShowCommentModal('${app.id}', 'dev')">Комментарий</button>
-                </div>
-            ` : ''}
-            <button class="delete-btn" onclick="adminDeleteApplication('${app.id}', 'dev')">Удалить</button>
-        `;
-        applicationsList.appendChild(appElement);
-    });
-}
-
-function loadUsersList() {
-    const users = JSON.parse(localStorage.getItem('users')) || [];
-    const usersList = document.getElementById('usersList');
-    usersList.innerHTML = '';
-    
-    if (users.length === 0) {
-        usersList.innerHTML = '<p>Пользователей пока нет</p>';
-        return;
-    }
-    
-    users.forEach((user, index) => {
-        const userElement = document.createElement('div');
-        userElement.className = 'application-item';
-        userElement.innerHTML = `
-            <h4>Пользователь #${index + 1}</h4>
-            <p><strong>ID:</strong> ${user.id}</p>
-            <p><strong>Имя:</strong> ${user.firstName} ${user.lastName}</p>
-            <p><strong>Email:</strong> ${user.email}</p>
-            <p><strong>Зарегистрирован:</strong> ${new Date(user.registeredAt).toLocaleString()}</p>
-            <p><strong>Уведомления:</strong> ${user.notificationPermission ? 'Разрешены' : 'Запрещены'}</p>
-            <p><strong>Кол-во уведомлений:</strong> ${user.notifications ? user.notifications.length : 0}</p>
-        `;
-        usersList.appendChild(userElement);
-    });
-}
-
-function getUserById(userId) {
-    const users = JSON.parse(localStorage.getItem('users')) || [];
-    return users.find(u => u.id === userId);
-}
-
-function getStatusText(status) {
-    const statusTexts = {
-        'pending': 'На рассмотрении',
-        'approved': 'Одобрено', 
-        'rejected': 'Отклонено'
-    };
-    return statusTexts[status] || status;
-}
-
-// Admin application actions (global functions)
-function adminApproveApplication(applicationId, type) {
-    if (confirm('Одобрить эту заявку?')) {
-        const application = applicationManager.updateApplicationStatus(applicationId, type, 'approved');
-        if (application) {
-            const user = getUserById(application.userId);
-            if (user) {
-                userManager.addNotification(user.id, {
-                    title: type === 'beta' ? 'Заявка на бета-тестирование одобрена' : 'Заявка в команду одобрена',
-                    message: type === 'beta' 
-                        ? 'Поздравляем! Ваша заявка на бета-тестирование ArBrowser была одобрена. Мы свяжемся с вами в ближайшее время.'
-                        : 'Поздравляем! Ваша заявка на участие в команде разработки была одобрена. Мы свяжемся с вами для обсуждения деталей.',
-                    type: 'success',
-                    applicationId: applicationId
-                });
-
-                notificationManager.showBrowserNotification(
-                    'Заявка одобрена!',
-                    type === 'beta' 
-                        ? 'Ваша заявка на бета-тестирование была одобрена!'
-                        : 'Ваша заявка в команду была одобрена!'
-                );
-
-                notificationManager.sendEmailNotification(
-                    user.email,
-                    type === 'beta' ? 'Заявка на бета-тестирование ArBrowser одобрена' : 'Заявка в команду ArBrowser одобрена',
-                    type === 'beta'
-                        ? `Уважаемый(ая) ${user.firstName} ${user.lastName}!\n\nВаша заявка на бета-тестирование ArBrowser была одобрена. Мы свяжемся с вами в ближайшее время для предоставления доступа к бета-версии.\n\nС уважением,\nКоманда ArBrowser`
-                        : `Уважаемый(ая) ${user.firstName} ${user.lastName}!\n\nВаша заявка на участие в команде разработки ArBrowser была одобрена. Мы свяжемся с вами в ближайшее время для обсуждения деталей сотрудничества.\n\nС уважением,\nКоманда ArBrowser`
-                );
-            }
-            
-            loadApplications();
-            alert('Заявка одобрена! Пользователь получил уведомление.');
-        }
-    }
-}
-
-function adminRejectApplication(applicationId, type) {
-    adminShowCommentModal(applicationId, type, true);
-}
-
-function adminShowCommentModal(applicationId, type, isRejection = false) {
-    currentCommentAppId = applicationId;
-    currentCommentAppType = type;
-    currentCommentIsRejection = isRejection;
-    
-    const modal = document.createElement('div');
-    modal.className = 'modal comment-modal';
-    modal.innerHTML = `
-        <div class="modal-content comment-content">
-            <span class="close">&times;</span>
-            <h2>${isRejection ? 'Отклонить заявку' : 'Добавить комментарий'}</h2>
-            <textarea class="comment-textarea" placeholder="${isRejection ? 'Укажите причину отказа...' : 'Введите ваш комментарий...'}" required></textarea>
-            <div class="comment-actions">
-                <button class="secondary-btn" onclick="adminCloseCommentModal()">Отмена</button>
-                <button class="${isRejection ? 'reject-btn' : 'comment-btn'}" onclick="adminSubmitComment()">
-                    ${isRejection ? 'Отклонить' : 'Отправить'}
-                </button>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(modal);
-    modal.style.display = 'block';
-    
-    modal.querySelector('.close').addEventListener('click', () => {
-        document.body.removeChild(modal);
-    });
-    
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            document.body.removeChild(modal);
-        }
-    });
-}
-
-function adminSubmitComment() {
-    const modal = document.querySelector('.comment-modal');
-    const comment = modal.querySelector('.comment-textarea').value;
-    
-    if (!comment.trim()) {
-        alert('Пожалуйста, введите комментарий');
-        return;
-    }
-    
-    const status = currentCommentIsRejection ? 'rejected' : 'pending';
-    const application = applicationManager.updateApplicationStatus(currentCommentAppId, currentCommentAppType, status, comment);
-    
-    if (application) {
-        const user = getUserById(application.userId);
-        if (user) {
-            if (currentCommentIsRejection) {
-                userManager.addNotification(user.id, {
-                    title: currentCommentAppType === 'beta' ? 'Заявка на бета-тестирование отклонена' : 'Заявка в команду отклонена',
-                    message: currentCommentAppType === 'beta'
-                        ? 'К сожалению, ваша заявка на бета-тестирование ArBrowser была отклонена.'
-                        : 'К сожалению, ваша заявка на участие в команде разработки была отклонена.',
-                    type: 'error',
-                    applicationId: currentCommentAppId,
-                    adminComment: comment
-                });
-
-                notificationManager.showBrowserNotification(
-                    'Заявка отклонена',
-                    currentCommentAppType === 'beta'
-                        ? 'Ваша заявка на бета-тестирование была отклонена.'
-                        : 'Ваша заявка в команду была отклонена.'
-                );
-
-                notificationManager.sendEmailNotification(
-                    user.email,
-                    currentCommentAppType === 'beta' ? 'Заявка на бета-тестирование ArBrowser отклонена' : 'Заявка в команду ArBrowser отклонена',
-                    currentCommentAppType === 'beta'
-                        ? `Уважаемый(ая) ${user.firstName} ${user.lastName}!\n\nК сожалению, ваша заявка на бета-тестирование ArBrowser была отклонена.\n\nПричина: ${comment}\n\nС уважением,\nКоманда ArBrowser`
-                        : `Уважаемый(ая) ${user.firstName} ${user.lastName}!\n\nК сожалению, ваша заявка на участие в команде разработки ArBrowser была отклонена.\n\nПричина: ${comment}\n\nС уважением,\nКоманда ArBrowser`
-                );
-            } else {
-                userManager.addNotification(user.id, {
-                    title: 'Комментарий к вашей заявке',
-                    message: 'Администратор оставил комментарий к вашей заявке.',
-                    type: 'warning',
-                    applicationId: currentCommentAppId,
-                    adminComment: comment
-                });
-
-                notificationManager.showBrowserNotification(
-                    'Новый комментарий',
-                    'Администратор оставил комментарий к вашей заявке.'
-                );
-            }
-        }
-        
-        const modal = document.querySelector('.comment-modal');
-        if (modal) {
-            document.body.removeChild(modal);
-        }
-        loadApplications();
-        alert(currentCommentIsRejection ? 'Заявка отклонена!' : 'Комментарий добавлен!');
-    }
-}
-
-function adminCloseCommentModal() {
-    const modal = document.querySelector('.comment-modal');
-    if (modal) {
-        document.body.removeChild(modal);
-    }
-}
-
-function adminDeleteApplication(applicationId, type) {
-    if (confirm('Вы уверены, что хотите удалить эту заявку?')) {
-        const storageKey = type === 'beta' ? 'betaApplications' : 'devApplications';
-        const applications = JSON.parse(localStorage.getItem(storageKey)) || [];
-        const filteredApplications = applications.filter(app => app.id !== applicationId);
-        localStorage.setItem(storageKey, JSON.stringify(filteredApplications));
-        loadApplications();
-    }
-}
-
-function saveContent() {
-    const siteContent = {
-        heroTitle: document.getElementById('heroTitle').value,
-        heroSubtitle: document.getElementById('heroSubtitle').value,
-        releaseDate: document.getElementById('releaseDate').value
-    };
-    
-    localStorage.setItem('siteContent', JSON.stringify(siteContent));
-    
-    document.querySelector('.hero-title').textContent = siteContent.heroTitle;
-    document.querySelector('.hero-subtitle').textContent = siteContent.heroSubtitle;
-    document.querySelector('.release-info h4').textContent = `📅 Примерный релиз: ${siteContent.releaseDate}`;
-    
-    alert('Изменения сохранены!');
-}
-
-function loadContent() {
-    const savedContent = JSON.parse(localStorage.getItem('siteContent')) || {};
-    document.getElementById('heroTitle').value = savedContent.heroTitle || 'ArBrowser';
-    document.getElementById('heroSubtitle').value = savedContent.heroSubtitle || 'Браузер нового поколения от Ткаченко Арсения';
-    document.getElementById('releaseDate').value = savedContent.releaseDate || 'Декабрь 2025';
-}
-
-// Intersection Observer for animations
-const observerOptions = {
-    threshold: 0.1,
-    rootMargin: '0px 0px -50px 0px'
-};
-
-const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-        if (entry.isIntersecting) {
-            entry.target.style.opacity = '1';
-            entry.target.style.transform = 'translateY(0)';
-        }
-    });
-}, observerOptions);
-
-document.querySelectorAll('.feature-card').forEach(card => {
-    card.style.opacity = '0';
-    card.style.transform = 'translateY(30px)';
-    card.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
-    observer.observe(card);
-});
+            'Заявка
