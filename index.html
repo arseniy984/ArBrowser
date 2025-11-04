@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Технические работы | ArBrowser</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .maintenance-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 50px 40px;
+            text-align: center;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            width: 90%;
+            backdrop-filter: blur(10px);
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .icon {
+            font-size: 80px;
+            margin-bottom: 25px;
+            color: #764ba2;
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+            60% { transform: translateY(-5px); }
+        }
+
+        h1 {
+            font-size: 2.2em;
+            margin-bottom: 15px;
+            color: #2d3748;
+            font-weight: 700;
+        }
+
+        .subtitle {
+            font-size: 1.3em;
+            color: #4a5568;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .description {
+            color: #718096;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .progress-container {
+            background: #e2e8f0;
+            border-radius: 10px;
+            height: 8px;
+            margin: 30px 0;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 10px;
+            width: 65%;
+            animation: progressAnimation 3s infinite;
+        }
+
+        @keyframes progressAnimation {
+            0% { width: 65%; }
+            50% { width: 75%; }
+            100% { width: 65%; }
+        }
+
+        .details {
+            background: #f7fafc;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 25px 0;
+            text-align: left;
+            border-left: 4px solid #667eea;
+        }
+
+        .details h3 {
+            color: #2d3748;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .details p {
+            color: #718096;
+            font-size: 0.95em;
+        }
+
+        .contact-info {
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .contact-info a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.3s;
+        }
+
+        .contact-info a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .author-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f4ff;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .author-info p {
+            color: #5a67d8;
+            font-weight: 600;
+            font-size: 0.95em;
+        }
+
+        .countdown {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #2d3748;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f7fafc;
+            border-radius: 10px;
+            border: 2px solid #e2e8f0;
+        }
+
+        .countdown-timer {
+            font-size: 1.3em;
+            color: #5a67d8;
+            margin-top: 8px;
+            font-weight: 700;
+        }
+
+        @media (max-width: 480px) {
+            .maintenance-container {
+                padding: 30px 20px;
+            }
+            
+            h1 {
+                font-size: 1.8em;
+            }
+            
+            .subtitle {
+                font-size: 1.1em;
+            }
+            
+            .icon {
+                font-size: 60px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="maintenance-container">
+        <div class="icon">⚙️</div>
+        
+        <h1>ArBrowser</h1>
+        
+        <p class="subtitle">Ведутся технические работы</p>
+        
+        <p class="description">
+            Мы работаем над улучшением нашего сервиса, чтобы предложить вам 
+            лучший пользовательский опыт. Приносим извинения за временные неудобства.
+        </p>
+
+        <div class="progress-container">
+            <div class="progress-bar"></div>
+        </div>
+
+        <div class="countdown">
+            <div>Ориентировочное время завершения:</div>
+            <div style="font-weight: 700; color: #5a67d8; margin: 5px 0;">03.11.2025</div>
+            <div>До завершения осталось:</div>
+            <div class="countdown-timer" id="countdown-timer"></div>
+        </div>
+
+        <div class="details">
+            <h3>Что происходит?</h3>
+            <p>• Обновление системы безопасности<br>
+               • Улучшение производительности<br>
+               • Добавление новых функций<br>
+               • Оптимизация базы данных</p>
+        </div>
+
+        <div class="author-info">
+            <p>Сайт разработан: Ткаченко Арсений</p>
+        </div>
+
+        <div class="contact-info">
+            <p>Если у вас срочный вопрос, свяжитесь с нами:</p>
+            <p>📧 Email: <a href="mailto:epr.prokopenko@yandex.ru">epr.prokopenko@yandex.ru</a></p>
+        </div>
+    </div>
+
+    <script>
+        // Установите дату завершения работ (3 ноября 2025 года)
+        const endDate = new Date('2025-11-03T23:59:59').getTime();
+
+        function updateCountdown() {
+            const now = new Date().getTime();
+            const distance = endDate - now;
+
+            if (distance < 0) {
+                document.getElementById('countdown-timer').innerHTML = "Работы завершены!";
+                return;
+            }
+
+            const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+            document.getElementById('countdown-timer').innerHTML = 
+                `${days}д ${hours}ч ${minutes}м ${seconds}с`;
+        }
+
+        // Обновляем счетчик каждую секунду
+        setInterval(updateCountdown, 1000);
+        
+        // Запускаем сразу при загрузке страницы
+        updateCountdown();
+    </script>
+</body>
+</html>
